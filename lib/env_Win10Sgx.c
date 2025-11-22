@@ -9,7 +9,7 @@
 
 VOID SYMCRYPT_CALL SymCryptCpuidExCallback( int cpuInfo[4], int function_id, int subfunction_id );
 
-SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvWin10Sgx()
+SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvWin10Sgx(void)
 {
 #if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 
     return SYMCRYPT_CPU_FEATURE_AVX2;
@@ -54,7 +54,7 @@ SymCryptFatalEnvWin10Sgx( UINT32 fatalCode )
 
 VOID
 SYMCRYPT_CALL
-SymCryptInitEnvWin10Sgx()
+SymCryptInitEnvWin10Sgx( UINT32 version )
 {
     if ( g_SymCryptFlags & SYMCRYPT_FLAG_LIB_INITIALIZED )
     {
@@ -89,7 +89,7 @@ SymCryptInitEnvWin10Sgx()
 
 #endif
 
-    SymCryptInitEnvCommon();
+    SymCryptInitEnvCommon( version );
 }
 
 #if SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_X86

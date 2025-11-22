@@ -6,10 +6,13 @@
 
 #include "ksarm.h"
 
-#include "..\inc\symcrypt_version.inc"
-#include "symcrypt_magic.inc"
+; As Arm assembler already uses C preprocessor, we can just hardcode this asm to include constants
+; MASM for now. To be fixed properly when converting arm64 asm to symcryptasm.
+#define SYMCRYPT_MASM
+#include "C_asm_shared.inc"
+#undef SYMCRYPT_MASM
 
-#include "..\C_asm_shared.inc"
+#include "symcrypt_magic.inc"
 
 ; A digit consists of 4 words of 32 bits each
 
@@ -379,7 +382,7 @@ SymCryptFdefRawMulAsmLoopInner
 ; VOID
 ; SYMCRYPT_CALL
 ; SymCryptFdefRawSquareAsm(
-;   _In_reads_(nDgigits*SYMCRYPT_FDEF_DIGIT_NUINT32)    PCUINT32    pSrc,
+;   _In_reads_(nDigits*SYMCRYPT_FDEF_DIGIT_NUINT32)     PCUINT32    pSrc,
 ;                                                       UINT32      nDigits,
 ;   _Out_writes_(2*nWords)                              PUINT32     pDst )
 ;
@@ -449,11 +452,11 @@ SymCryptFdefRawSquareAsmInnerLoopInit_Word1
 
     SQR_SINGLEADD_32    3
 
-  
+
     add     r2, r2, #16
     add     r4, r4, #16
 
-    adds    r3, r3, #1                  ; move one digit up  
+    adds    r3, r3, #1                  ; move one digit up
     bne     SymCryptFdefRawSquareAsmInnerLoopInit_Word0
 
     str     r11, [r4]                   ; Store the next word into the destination
@@ -585,7 +588,7 @@ SymCryptFdefRawSquareAsmThirdPass
 ;VOID
 ;SymCryptFdefMontgomeryReduceAsm(
 ;    _In_                            PCSYMCRYPT_MODULUS      pmMod,
-;    _In_                            PUINT32                 pSrc,
+;    _Inout_                         PUINT32                 pSrc,
 ;    _Out_                           PUINT32                 pDst )
 ;
 ; Initial inputs to registers:
@@ -615,11 +618,11 @@ inv64           EQU 12              ; Inv64 of modulus
     PROLOG_PUSH         {r4-r12, lr}
     PROLOG_STACK_ALLOC  16
 
-    str     r2, [sp, #pDst]                                       ; Store pDst in the stack
-    ldr     r3, [r0, #SymCryptModulusNdigitsOffsetArm]            ; # of Digits
-    ldr     r5, [r0, #SymCryptModulusMontgomeryInv64OffsetArm]    ; Inv64 of modulus
-    add     r0, r0, #SymCryptModulusValueOffsetArm                ; pMod
-    str     r5, [sp, #inv64]                                      ; Store inv64 in the stack
+    str     r2, [sp, #pDst]                             ; Store pDst in the stack
+    ldr     r3, [r0, #SymCryptModulusNdigitsOffsetArm]  ; # of Digits
+    ldr     r5, [r0, #SymCryptModulusInv64OffsetArm]    ; Inv64 of modulus
+    add     r0, r0, #SymCryptModulusValueOffsetArm      ; pMod
+    str     r5, [sp, #inv64]                            ; Store inv64 in the stack
 
     lsl     r4, r3, #2                  ; Multiply by 4 to get the number of words
 
@@ -689,7 +692,7 @@ SymCryptFdefMontgomeryReduceAsmInner
     adds    r11, r11, r7                ; c + pSrc[nWords] + hc
     adc     r8, r8, #0                  ; Add the carry if any
     str     r11, [r1], #4               ; pSrc[nWords] = c
-    
+
     adds    r12, r12, r6                ; c + pSrc[nWords+1]
     adc     r9, r9, #0                  ; Add the carry if any
     adds    r12, r12, r8                ; c + pSrc[nWords] + hc
@@ -701,7 +704,7 @@ SymCryptFdefMontgomeryReduceAsmInner
     add     r2, r2, #8                  ; Move stored pSrc pointer two words up
     ldr     r0, [sp, #pMod]             ; Restore the pMod pointer
     mov     r1, r2                      ; Restore the pSrc pointer
-    
+
     bne     SymCryptFdefMontgomeryReduceAsmOuter
 
     ;

@@ -25,28 +25,47 @@ const SYMCRYPT_MODULAR_FUNCTIONS g_SymCryptModFns[] = {
 #if SYMCRYPT_CPU_AMD64
 
     SYMCRYPT_MOD_FUNCTIONS_FDEF369_MONTGOMERY,          // optimized for 384 and 576-bit moduli
-    SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY256,          // Special faster code for 256-bit Montgomery moduli
+    SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY_MULX256,     // Special faster code for 256-bit Montgomery moduli, MULX-based code
+    SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY_MULXP384,    // Special faster code for P-384 field modulus, MULX-based code
     SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY_MULX,        // MULX-based code, for any size (digit size = 512 bits)
-    SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY512,          // Special faster code for 512-bit Montgomery moduli
-    SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY1024,         // Special faster code for 1024-bit Montgomery moduli
     SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY_MULX1024,    // Special faster code for 1024-bit Montgomery moduli, MULX-based code
+    {NULL,},
+
+    // SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY_MULXP256,    // Special faster code for P-256 field modulus, MULX-based code
+    // SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY_MULX384,     // Special faster code for 384-bit Montgomery moduli, MULX-based code
+    // SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY256,          // Special faster code for 256-bit Montgomery moduli
+    // SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY512,          // Special faster code for 512-bit Montgomery moduli
+    // SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY1024,         // Special faster code for 1024-bit Montgomery moduli
 
 #elif SYMCRYPT_CPU_ARM64
 
     SYMCRYPT_MOD_FUNCTIONS_FDEF369_MONTGOMERY,
+    SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY_ARM64256,
+    SYMCRYPT_MOD_FUNCTIONS_FDEF_MONTGOMERY_ARM64P384,
+    {NULL,},
+    {NULL,},
     {NULL,},
 
 #endif
 };
 
-#define SymCryptModFntableGeneric               (0 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE)
-#define SymCryptModFntableMontgomery            (1 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE)
-#define SymCryptModFntable369Montgomery         (2 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE)
-#define SymCryptModFntableMontgomery256         (3 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE)
-#define SymCryptModFntableMontgomeryMulx	    (4 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE)
-#define SymCryptModFntableMontgomery512	        (5 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE)
-#define SymCryptModFntableMontgomery1024	    (6 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE)
-#define SymCryptModFntableMontgomeryMulx1024    (7 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE)
+#define SymCryptModLabel(_label)                (_label << 16)
+#define SymCryptModFntableGeneric               (SymCryptModLabel('gM') + (0 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+#define SymCryptModFntableMontgomery            (SymCryptModLabel('mM') + (1 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+#define SymCryptModFntable369Montgomery         (SymCryptModLabel('9m') + (2 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+#define SymCryptModFntableMontgomeryMulx256     (SymCryptModLabel('2x') + (3 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+#define SymCryptModFntableMontgomeryMulxP384    (SymCryptModLabel('3n') + (4 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+#define SymCryptModFntableMontgomeryMulx        (SymCryptModLabel('xM') + (5 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+#define SymCryptModFntableMontgomeryMulx1024    (SymCryptModLabel('1x') + (6 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+
+#define SymCryptModFntableMontgomeryArm64256    (SymCryptModLabel('2m') + (3 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+#define SymCryptModFntableMontgomeryArm64P384   (SymCryptModLabel('3n') + (4 * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+
+// #define SymCryptModFntableMontgomeryMulxP256    (SymCryptModLabel('2n') + (xx * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+// #define SymCryptModFntableMontgomeryMulx384     (SymCryptModLabel('3x') + (xx * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+// #define SymCryptModFntableMontgomery256         (SymCryptModLabel('2m') + (xx * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+// #define SymCryptModFntableMontgomery512         (SymCryptModLabel('5m') + (xx * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
+// #define SymCryptModFntableMontgomery1024        (SymCryptModLabel('1m') + (xx * SYMCRYPT_MODULAR_FUNCTIONS_SIZE))
 
 C_ASSERT( (sizeof( g_SymCryptModFns ) & (sizeof( g_SymCryptModFns) - 1 )) == 0 ); // size of the table must be a power of 2 to be CFG-safe.
 
@@ -55,30 +74,31 @@ const UINT32 g_SymCryptModFnsMask = sizeof( g_SymCryptModFns ) - sizeof( g_SymCr
 //
 // Tweaking the selection & function tables allows different tradeoffs of performance vs codesize
 //
-SYMCRYPT_MODULUS_TYPE_SELECTION_ENTRY SymCryptModulusTypeSelections[] = 
+const SYMCRYPT_MODULUS_TYPE_SELECTION_ENTRY SymCryptModulusTypeSelections[] =
 {
 #if SYMCRYPT_CPU_AMD64
-    // Mulx used for 257-512 and 577-... bits
-    {('2M' << 16) + SymCryptModFntableMontgomery256,        0,                               256,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
-    {('xM' << 16) + SymCryptModFntableMontgomeryMulx,       SYMCRYPT_CPU_FEATURES_FOR_MULX,  512,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY }, 
-    {('9M' << 16) + SymCryptModFntable369Montgomery,        0,                               384,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
-    {('5M' << 16) + SymCryptModFntableMontgomery512,        0,                               512,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
-    {('9M' << 16) + SymCryptModFntable369Montgomery,        0,                               576,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
-    {('xM' << 16) + SymCryptModFntableMontgomeryMulx1024,   SYMCRYPT_CPU_FEATURES_FOR_MULX, 1024,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
-    {('xM' << 16) + SymCryptModFntableMontgomeryMulx,       SYMCRYPT_CPU_FEATURES_FOR_MULX,    0,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
-    {('1M' << 16) + SymCryptModFntableMontgomery1024,       0,                              1024,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    // Mulx used for 0-512 and 577-... bits
+    {SymCryptModFntableMontgomeryMulxP384,  SYMCRYPT_CPU_FEATURES_FOR_MULX,  384,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY | SYMCRYPT_MODULUS_FEATURE_NISTP384 },
+    {SymCryptModFntableMontgomeryMulx256,   SYMCRYPT_CPU_FEATURES_FOR_MULX,  256,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    {SymCryptModFntableMontgomeryMulx,      SYMCRYPT_CPU_FEATURES_FOR_MULX,  512,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    {SymCryptModFntable369Montgomery,       0,                               384,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    {SymCryptModFntableMontgomery,          0,                               512,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    {SymCryptModFntable369Montgomery,       0,                               576,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    {SymCryptModFntableMontgomeryMulx1024,  SYMCRYPT_CPU_FEATURES_FOR_MULX, 1024,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    {SymCryptModFntableMontgomeryMulx,      SYMCRYPT_CPU_FEATURES_FOR_MULX,    0,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
 
 #elif SYMCRYPT_CPU_ARM64
 
-    {('mM' << 16) + SymCryptModFntableMontgomery,           0,                               256,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
-    {('9M' << 16) + SymCryptModFntable369Montgomery,        0,                               384,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
-    {('mM' << 16) + SymCryptModFntableMontgomery,           0,                               512,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
-    {('9M' << 16) + SymCryptModFntable369Montgomery,        0,                               576,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    {SymCryptModFntableMontgomeryArm64P384, 0,                               384,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY | SYMCRYPT_MODULUS_FEATURE_NISTP384 },
+    {SymCryptModFntableMontgomeryArm64256,  0,                               256,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    {SymCryptModFntable369Montgomery,       0,                               384,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    {SymCryptModFntableMontgomery,          0,                               512,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    {SymCryptModFntable369Montgomery,       0,                               576,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
 
 #endif
 
-    {('mM' << 16) + SymCryptModFntableMontgomery,           0,                                 0,    SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
-    {('gM' << 16) + SymCryptModFntableGeneric,              0,                                 0,    0 },
+    {SymCryptModFntableMontgomery,          0,                                 0,   SYMCRYPT_MODULUS_FEATURE_MONTGOMERY },
+    {SymCryptModFntableGeneric,             0,                                 0,   0 },
     // This last entry always matches, so the code never falls off the end of this table.
 };
 
@@ -118,9 +138,9 @@ SymCryptSizeofIntFromDigits( UINT32 nDigits )
 
 PSYMCRYPT_INT
 SYMCRYPT_CALL
-SymCryptIntCreate( 
-    _Out_writes_bytes_( cbBuffer )  PBYTE   pbBuffer, 
-                                    SIZE_T  cbBuffer, 
+SymCryptIntCreate(
+    _Out_writes_bytes_( cbBuffer )  PBYTE   pbBuffer,
+                                    SIZE_T  cbBuffer,
                                     UINT32  nDigits )
 {
     return SymCryptFdefIntCreate( pbBuffer, cbBuffer, nDigits );
@@ -138,8 +158,8 @@ SymCryptIntWipe( _Out_ PSYMCRYPT_INT piDst )
 
 VOID
 SYMCRYPT_CALL
-SymCryptIntCopy( 
-    _In_    PCSYMCRYPT_INT  piSrc, 
+SymCryptIntCopy(
+    _In_    PCSYMCRYPT_INT  piSrc,
     _Out_   PSYMCRYPT_INT   piDst )
 {
     SymCryptFdefIntCopy( piSrc, piDst );
@@ -191,8 +211,8 @@ SymCryptIntDigitsizeOfObject( _In_ PCSYMCRYPT_INT piSrc )
 
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptIntCopyMixedSize( 
-    _In_    PCSYMCRYPT_INT  piSrc, 
+SymCryptIntCopyMixedSize(
+    _In_    PCSYMCRYPT_INT  piSrc,
     _Out_   PSYMCRYPT_INT   piDst )
 {
     return SymCryptFdefIntCopyMixedSize( piSrc, piDst );
@@ -207,8 +227,8 @@ SymCryptIntBitsizeOfValue( _In_ PCSYMCRYPT_INT piSrc )
 
 VOID
 SYMCRYPT_CALL
-SymCryptIntSetValueUint32( 
-            UINT32          u32Src, 
+SymCryptIntSetValueUint32(
+            UINT32          u32Src,
     _Out_   PSYMCRYPT_INT   piDst )
 {
     SymCryptFdefIntSetValueUint32( u32Src, piDst );
@@ -216,8 +236,8 @@ SymCryptIntSetValueUint32(
 
 VOID
 SYMCRYPT_CALL
-SymCryptIntSetValueUint64( 
-            UINT64          u64Src, 
+SymCryptIntSetValueUint64(
+            UINT64          u64Src,
     _Out_   PSYMCRYPT_INT   piDst )
 {
     SymCryptFdefIntSetValueUint64( u64Src, piDst );
@@ -225,10 +245,10 @@ SymCryptIntSetValueUint64(
 
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptIntSetValue( 
-    _In_reads_bytes_(cbSrc)     PCBYTE                  pbSrc, 
-                                SIZE_T                  cbSrc, 
-                                SYMCRYPT_NUMBER_FORMAT  format, 
+SymCryptIntSetValue(
+    _In_reads_bytes_(cbSrc)     PCBYTE                  pbSrc,
+                                SIZE_T                  cbSrc,
+                                SYMCRYPT_NUMBER_FORMAT  format,
     _Out_                       PSYMCRYPT_INT           piDst )
 {
     return SymCryptFdefIntSetValue( pbSrc, cbSrc, format, piDst );
@@ -236,10 +256,10 @@ SymCryptIntSetValue(
 
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptIntGetValue( 
-    _In_                        PCSYMCRYPT_INT          piSrc, 
-    _Out_writes_bytes_( cbDst ) PBYTE                   pbDst, 
-                                SIZE_T                  cbDst, 
+SymCryptIntGetValue(
+    _In_                        PCSYMCRYPT_INT          piSrc,
+    _Out_writes_bytes_( cbDst ) PBYTE                   pbDst,
+                                SIZE_T                  cbDst,
                                 SYMCRYPT_NUMBER_FORMAT  format )
 {
     return SymCryptFdefIntGetValue( piSrc, pbDst, cbDst, format );
@@ -496,9 +516,9 @@ SymCryptSizeofDivisorFromDigits( UINT32 nDigits )
 
 PSYMCRYPT_DIVISOR
 SYMCRYPT_CALL
-SymCryptDivisorCreate( 
-    _Out_writes_bytes_( cbBuffer )  PBYTE   pbBuffer, 
-                                    SIZE_T  cbBuffer, 
+SymCryptDivisorCreate(
+    _Out_writes_bytes_( cbBuffer )  PBYTE   pbBuffer,
+                                    SIZE_T  cbBuffer,
                                     UINT32  nDigits )
 {
     return SymCryptFdefDivisorCreate( pbBuffer, cbBuffer, nDigits );
@@ -514,8 +534,8 @@ SymCryptDivisorWipe( _Out_ PSYMCRYPT_DIVISOR pdObj )
 }
 
 VOID
-SymCryptDivisorCopy( 
-    _In_    PCSYMCRYPT_DIVISOR  pdSrc, 
+SymCryptDivisorCopy(
+    _In_    PCSYMCRYPT_DIVISOR  pdSrc,
     _Out_   PSYMCRYPT_DIVISOR   pdDst )
 {
     SymCryptFdefDivisorCopy( pdSrc, pdDst );
@@ -585,9 +605,9 @@ SymCryptSizeofModulusFromDigits( UINT32 nDigits )
 
 PSYMCRYPT_MODULUS
 SYMCRYPT_CALL
-SymCryptModulusCreate( 
-    _Out_writes_bytes_( cbBuffer )  PBYTE   pbBuffer, 
-                                    SIZE_T  cbBuffer, 
+SymCryptModulusCreate(
+    _Out_writes_bytes_( cbBuffer )  PBYTE   pbBuffer,
+                                    SIZE_T  cbBuffer,
                                     UINT32  nDigits )
 {
     return SymCryptFdefModulusCreate( pbBuffer, cbBuffer, nDigits );
@@ -604,7 +624,7 @@ SymCryptModulusWipe( _Out_ PSYMCRYPT_MODULUS pmObj )
 
 VOID
 SymCryptModulusCopy(
-    _In_    PCSYMCRYPT_MODULUS  pmSrc, 
+    _In_    PCSYMCRYPT_MODULUS  pmSrc,
     _Out_   PSYMCRYPT_MODULUS   pmDst )
 {
     SymCryptFdefModulusCopy( pmSrc, pmDst );
@@ -626,8 +646,8 @@ SymCryptModElementAllocate( _In_ PCSYMCRYPT_MODULUS pmMod )
 
 VOID
 SYMCRYPT_CALL
-SymCryptModElementFree( 
-    _In_    PCSYMCRYPT_MODULUS      pmMod,      
+SymCryptModElementFree(
+    _In_    PCSYMCRYPT_MODULUS      pmMod,
     _Out_   PSYMCRYPT_MODELEMENT    peObj )
 {
     SymCryptFdefModElementFree( pmMod, peObj );
@@ -642,10 +662,10 @@ SymCryptSizeofModElementFromModulus( PCSYMCRYPT_MODULUS pmMod )
 
 PSYMCRYPT_MODELEMENT
 SYMCRYPT_CALL
-SymCryptModElementCreate( 
-    _Out_writes_bytes_( cbBuffer )  PBYTE               pbBuffer, 
-                                    SIZE_T              cbBuffer, 
-                                    PCSYMCRYPT_MODULUS   pmMod )
+SymCryptModElementCreate(
+    _Out_writes_bytes_( cbBuffer )  PBYTE               pbBuffer,
+                                    SIZE_T              cbBuffer,
+    _In_                            PCSYMCRYPT_MODULUS  pmMod )
 {
     return SymCryptFdefModElementCreate( pbBuffer, cbBuffer, pmMod );
 }
@@ -660,9 +680,9 @@ SymCryptModElementWipe(
 }
 
 VOID
-SymCryptModElementCopy( 
+SymCryptModElementCopy(
     _In_    PCSYMCRYPT_MODULUS      pmMod,
-    _In_    PCSYMCRYPT_MODELEMENT   peSrc, 
+    _In_    PCSYMCRYPT_MODELEMENT   peSrc,
     _Out_   PSYMCRYPT_MODELEMENT    peDst )
 {
     SymCryptFdefModElementCopy( pmMod, peSrc, peDst );
@@ -671,7 +691,7 @@ SymCryptModElementCopy(
 VOID
 SymCryptModElementMaskedCopy(
     _In_    PCSYMCRYPT_MODULUS      pmMod,
-    _In_    PCSYMCRYPT_MODELEMENT   peSrc, 
+    _In_    PCSYMCRYPT_MODELEMENT   peSrc,
     _Out_   PSYMCRYPT_MODELEMENT    peDst,
             UINT32                  mask )
 {
@@ -712,7 +732,16 @@ SymCryptIntToModulus(
     _Out_writes_bytes_( cbScratch ) PBYTE               pbScratch,
                                     SIZE_T              cbScratch )
 {
-    SymCryptFdefIntToModulus( piSrc, pmDst, averageOperations, flags, pbScratch, cbScratch );
+    PSYMCRYPT_INT piSrcTweak = (PSYMCRYPT_INT) piSrc;
+
+    // In CHKed build, we'll verify that the modulus is not prime, or that it is 2 or odd
+    // (Some inversion algorithms fail hard when one input isn't 2 or odd.)
+    // We are constant-time w.r.t. piSrc being odd or =2. We don't hide the size of any input,
+    // but inputs 2 and 3 are handled with the same code path.
+    SYMCRYPT_ASSERT( ((flags & SYMCRYPT_FLAG_MODULUS_PRIME) == 0) ||
+        (((SymCryptIntGetValueLsbits32( piSrc ) & 1) | SymCryptIntIsEqualUint32( piSrc, 2 )) != 0) );
+
+    SymCryptFdefIntToModulus( piSrcTweak, pmDst, averageOperations, flags, pbScratch, cbScratch );
 }
 
 VOID
@@ -740,7 +769,7 @@ SymCryptModElementToInt(
     PCUINT32 pData;
 
     SYMCRYPT_ASSERT( piDst->nDigits >= pmMod->nDigits );
-    
+
     pData = SYMCRYPT_MOD_CALL( pmMod ) modPreGet( pmMod, peSrc, pbScratch, cbScratch );
 
     SymCryptFdefModElementToIntGeneric( pmMod, pData, piDst, pbScratch, cbScratch );
@@ -749,17 +778,17 @@ SymCryptModElementToInt(
 SYMCRYPT_DISABLE_CFG
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptModElementSetValue( 
-    _In_reads_bytes_( cbSrc )       PCBYTE                  pbSrc, 
-                                    SIZE_T                  cbSrc, 
-                                    SYMCRYPT_NUMBER_FORMAT  format, 
+SymCryptModElementSetValue(
+    _In_reads_bytes_( cbSrc )       PCBYTE                  pbSrc,
+                                    SIZE_T                  cbSrc,
+                                    SYMCRYPT_NUMBER_FORMAT  format,
                                     PCSYMCRYPT_MODULUS      pmMod,
     _Out_                           PSYMCRYPT_MODELEMENT    peDst,
     _Out_writes_bytes_( cbScratch ) PBYTE                   pbScratch,
                                     SIZE_T                  cbScratch )
 {
     SYMCRYPT_ERROR  scError;
-    
+
     scError = SymCryptFdefModElementSetValueGeneric( pbSrc, cbSrc, format, pmMod, peDst, pbScratch, cbScratch );
 
     if( scError == SYMCRYPT_NO_ERROR )
@@ -772,11 +801,11 @@ SymCryptModElementSetValue(
 
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptModElementGetValue( 
+SymCryptModElementGetValue(
                                     PCSYMCRYPT_MODULUS      pmMod,
     _In_                            PCSYMCRYPT_MODELEMENT   peSrc,
-    _Out_writes_bytes_( cbDst )     PBYTE                   pbDst, 
-                                    SIZE_T                  cbDst, 
+    _Out_writes_bytes_( cbDst )     PBYTE                   pbDst,
+                                    SIZE_T                  cbDst,
                                     SYMCRYPT_NUMBER_FORMAT  format,
     _Out_writes_bytes_( cbScratch ) PBYTE                   pbScratch,
                                     SIZE_T                  cbScratch )
@@ -876,8 +905,8 @@ SymCryptModNeg(
 SYMCRYPT_DISABLE_CFG
 VOID
 SYMCRYPT_CALL
-SymCryptModElementSetValueUint32( 
-                                    UINT32                  value, 
+SymCryptModElementSetValueUint32(
+                                    UINT32                  value,
     _In_                            PCSYMCRYPT_MODULUS      pmMod,
     _Out_                           PSYMCRYPT_MODELEMENT    peDst,
     _Out_writes_bytes_( cbScratch ) PBYTE                   pbScratch,
@@ -890,8 +919,8 @@ SymCryptModElementSetValueUint32(
 
 VOID
 SYMCRYPT_CALL
-SymCryptModElementSetValueNegUint32( 
-                                    UINT32                  value, 
+SymCryptModElementSetValueNegUint32(
+                                    UINT32                  value,
     _In_                            PCSYMCRYPT_MODULUS      pmMod,
     _Out_                           PSYMCRYPT_MODELEMENT    peDst,
     _Out_writes_bytes_( cbScratch ) PBYTE                   pbScratch,
@@ -914,7 +943,7 @@ SymCryptModDivPow2(
 }
 
 SYMCRYPT_DISABLE_CFG
-VOID
+SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptModInv(
     _In_                            PCSYMCRYPT_MODULUS      pmMod,
@@ -924,7 +953,7 @@ SymCryptModInv(
     _Out_writes_bytes_( cbScratch ) PBYTE                   pbScratch,
                                     SIZE_T                  cbScratch )
 {
-    SYMCRYPT_MOD_CALL( pmMod ) modInv( pmMod, peSrc, peDst, flags, pbScratch, cbScratch );
+    return SYMCRYPT_MOD_CALL( pmMod ) modInv( pmMod, peSrc, peDst, flags, pbScratch, cbScratch );
 }
 
 VOID
@@ -934,7 +963,7 @@ SymCryptModExp(
     _In_                            PCSYMCRYPT_MODELEMENT   peBase,
     _In_                            PCSYMCRYPT_INT          piExp,
                                     UINT32                  nBitsExp,
-    _In_                            UINT32                  flags,
+                                    UINT32                  flags,
     _Out_                           PSYMCRYPT_MODELEMENT    peDst,
     _Out_writes_bytes_( cbScratch ) PBYTE                   pbScratch,
                                     SIZE_T                  cbScratch )
@@ -942,12 +971,12 @@ SymCryptModExp(
     SymCryptModExpGeneric( pmMod, peBase, piExp, nBitsExp, flags, peDst, pbScratch, cbScratch );
 }
 
-VOID
+SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptModMultiExp(
     _In_                            PCSYMCRYPT_MODULUS      pmMod,
-    _In_                            PCSYMCRYPT_MODELEMENT * peBaseArray,
-    _In_                            PCSYMCRYPT_INT *        piExpArray,
+    _In_reads_( nBases )            PCSYMCRYPT_MODELEMENT * peBaseArray,
+    _In_reads_( nBases )            PCSYMCRYPT_INT *        piExpArray,
                                     UINT32                  nBases,
                                     UINT32                  nBitsExp,
                                     UINT32                  flags,
@@ -955,7 +984,7 @@ SymCryptModMultiExp(
     _Out_writes_bytes_( cbScratch ) PBYTE                   pbScratch,
                                     SIZE_T                  cbScratch )
 {
-    SymCryptModMultiExpGeneric( pmMod, peBaseArray, piExpArray, nBases, nBitsExp, flags, peDst, pbScratch, cbScratch );
+    return SymCryptModMultiExpGeneric( pmMod, peBaseArray, piExpArray, nBases, nBitsExp, flags, peDst, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
@@ -969,6 +998,7 @@ SymCryptModSetRandom(
                                     SIZE_T                  cbScratch )
 {
     SymCryptFdefModSetRandomGeneric( pmMod, peDst, flags, pbScratch, cbScratch );
+
     SYMCRYPT_MOD_CALL( pmMod ) modSetPost( pmMod, peDst, pbScratch, cbScratch );
 }
 
@@ -981,7 +1011,7 @@ SymCryptCreateTrialDivisionContext( UINT32 nDigits )
 
 UINT32
 SYMCRYPT_CALL
-SymCryptIntFindSmallDivisor( 
+SymCryptIntFindSmallDivisor(
     _In_                            PCSYMCRYPT_TRIALDIVISION_CONTEXT    pContext,
     _In_                            PCSYMCRYPT_INT                      piSrc,
     _Out_writes_bytes_( cbScratch ) PBYTE                               pbScratch,

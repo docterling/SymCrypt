@@ -4,7 +4,7 @@
 // Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
 //
 
-MacImp<ImpXxx, AlgXxx>::MacImp<ImpXxx, AlgXxx>()
+MacImp<ImpXxx, AlgXxx>::MacImp()
 {
     state.hHash = 0;
     state.hKey = 0;
@@ -14,7 +14,7 @@ MacImp<ImpXxx, AlgXxx>::MacImp<ImpXxx, AlgXxx>()
 }
 
 template<>
-MacImp<ImpXxx, AlgXxx>::~MacImp<ImpXxx, AlgXxx>()
+MacImp<ImpXxx, AlgXxx>::~MacImp()
 {
     CHECK( state.hKey == 0, "Handle leak" );
     CHECK( state.hHash == 0, "Handle leak" );
@@ -22,12 +22,12 @@ MacImp<ImpXxx, AlgXxx>::~MacImp<ImpXxx, AlgXxx>()
 
 SIZE_T MacImp<ImpXxx, AlgXxx>::inputBlockLen()
 {
-    return SYMCRYPT_XXX_INPUT_BLOCK_SIZE;
+    return SCSHIM_XXX_INPUT_BLOCK_SIZE;
 }
 
 SIZE_T MacImp<ImpXxx, AlgXxx>::resultLen()
 {
-    return SYMCRYPT_XXX_RESULT_SIZE;
+    return SCSHIM_XXX_RESULT_SIZE;
 }
 
 

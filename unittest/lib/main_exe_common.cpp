@@ -1,50 +1,118 @@
 //
-// Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
+// Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
-
-PSTR testDriverName = TESTDRIVER_NAME;
-
-DWORD WINAPI umThreadFunc( LPVOID param )
+const char * g_implementationNames[] =
 {
-    runTestThread( param );
+    ImpSc::name,
+#if INCLUDE_IMPL_RSA32
+    ImpRsa32::name,
+    ImpRsa32b::name,
+#endif
+#if INCLUDE_IMPL_CAPI
+    ImpCapi::name,
+#endif
+#if INCLUDE_IMPL_CNG
+    ImpCng::name,
+#endif
+#if INCLUDE_IMPL_REF
+    ImpRef::name,
+#endif
+#if INCLUDE_IMPL_MSBIGNUM
+    ImpMsBignum::name,
+#endif
+#if INCLUDE_IMPL_OPENSSL
+    ImpOpenssl::name,
+#endif
+#if INCLUDE_IMPL_LIBCRUX
+    ImpLibcrux::name,
+#endif
+    NULL,
+};
+
+VOID
+addAllAlgs()
+{
+    addSymCryptAlgs();
+
+    if( !g_sgx )
+    {
+        // SGX mode cares about testing BCrypt functions in enclaves, so ignores CAPI and RSA32 tests
+        // which are identical to normal mode. SymCrypt provides implementations for all algs,
+        // so they must run because the test fails if there are algorithms where no implementations were tested.
+#if INCLUDE_IMPL_RSA32
+        addRsa32Algs();
+#endif
+#if INCLUDE_IMPL_CAPI
+        addCapiAlgs();
+#endif
+    }
+
+#if INCLUDE_IMPL_CNG
+    addCngAlgs();
+#endif
+#if INCLUDE_IMPL_REF
+    addRefAlgs();
+#endif
+#if INCLUDE_IMPL_MSBIGNUM
+    addMsBignumAlgs();
+#endif
+#if INCLUDE_IMPL_OPENSSL
+    addOpensslAlgs();
+#endif
+#if INCLUDE_IMPL_LIBCRUX
+    addLibcruxAlgs();
+#endif
+}
+
+int SYMCRYPT_CDECL
+main( int argc, _In_reads_( argc ) char * argv[] )
+{
+    initTestInfrastructure( argc, argv );
+
+    addAllAlgs();
+
+    if (!g_profile && !g_measure_specific_sizes)
+    {
+        runFunctionalTests();
+    }
+
+    // In performance testing we don't care about ImpSc which has overhead from vector save/restore
+    // testing shim
+    // Instead we want to test ImpScStatic which just directly calls into statically linked SymCrypt
+    // functions
+    // We call updateSymCryptStaticAlgs to switch out the static SymCrypt implementations
+    updateSymCryptStaticAlgs();
+
+    // Disable Vector save testing for non-functional tests
+    // This avoids unnecessary costs in the statically linked SymCrypt functions which use the unit
+    // test environment so may save/restore in user mode unnecessarily for test purposes
+    TestSaveXmmEnabled = FALSE;
+    TestSaveYmmEnabled = FALSE;
+
+    // Clean vector registers of any random values
+    // (having dirty Ymm state hurts SSE performance)
+    cleanVectorRegisters();
+
+    if (g_profile)
+    {
+        runProfiling();
+    }
+    else
+    {
+        runPerfTests();
+
+        if (!g_measure_specific_sizes)
+        {
+#if SYMCRYPT_TEST_SELFTEST
+            testSelftest();
+#endif
+
+            testMultiThread();
+        }
+    }
+
+    exitTestInfrastructure();
+
     return 0;
-}
-
-VOID
-scheduleAsyncTest( SelfTestFn f )
-{
-    //
-    // No async testing in user mode, just run the test in-line.
-    //
-    f();
-}
-
-
-VOID
-testMultiThread()
-{
-    HANDLE threads[64];
-    int i;
-    g_fExitMultithreadTest = FALSE;
-    g_nMultithreadTestsRun = 0;
-
-    iprint( "\nMulti-thread test..." );
-
-    for( i=0; i<ARRAY_SIZE( threads ); i++ )
-    {
-        threads[i] = CreateThread( NULL, 0, &umThreadFunc, (LPVOID) g_rng.sizet( (SIZE_T)-1 ), 0, NULL );
-        CHECK3( threads[i] != NULL, "Failed to start thread i", i)
-    }
-
-    Sleep( 1000 * 10 );
-
-    g_fExitMultithreadTest = TRUE;
-
-    for( i=0; i<ARRAY_SIZE( threads ); i++ )
-    {
-        CHECK( WaitForSingleObject( threads[i], 5000 ) == 0, "Thread did not exit in time" );
-        CloseHandle( threads[i] );
-    }
-    iprint( " done. %lld tests run.\n", g_nMultithreadTestsRun );
 }

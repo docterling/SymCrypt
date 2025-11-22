@@ -14,7 +14,7 @@ const SYMCRYPT_MAC SymCryptAesCmacAlgorithm_fast = {
     sizeof(SYMCRYPT_AES_CMAC_EXPANDED_KEY),
     sizeof(SYMCRYPT_AES_CMAC_STATE),
     SYMCRYPT_AES_CMAC_RESULT_SIZE,
-    NULL, 
+    NULL,
     0,
 };
 
@@ -22,7 +22,7 @@ const PCSYMCRYPT_MAC SymCryptAesCmacAlgorithm = &SymCryptAesCmacAlgorithm_fast;
 
 VOID
 SYMCRYPT_CALL
-SymCryptCmacMunge( 
+SymCryptCmacMunge(
     _Inout_updates_bytes_(SYMCRYPT_AES_BLOCK_SIZE)  BYTE    buf[SYMCRYPT_AES_BLOCK_SIZE] )
 {
     SIZE_T carry = 0;
@@ -39,10 +39,9 @@ SymCryptCmacMunge(
     buf[15] ^= (0 - carry) & 0x87;                // This is the R_128 value from SP 800-38B 5.3
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptAesCmacExpandKey( 
+SymCryptAesCmacExpandKey(
     _Out_               PSYMCRYPT_AES_CMAC_EXPANDED_KEY pExpandedKey,
     _In_reads_(cbKey)   PCBYTE                          pbKey,
                         SIZE_T                          cbKey )
@@ -77,8 +76,8 @@ cleanup:
 
 VOID
 SYMCRYPT_CALL
-SymCryptAesCmacKeyCopy( 
-    _In_    PCSYMCRYPT_AES_CMAC_EXPANDED_KEY pSrc, 
+SymCryptAesCmacKeyCopy(
+    _In_    PCSYMCRYPT_AES_CMAC_EXPANDED_KEY pSrc,
     _Out_   PSYMCRYPT_AES_CMAC_EXPANDED_KEY  pDst )
 {
     SYMCRYPT_CHECK_MAGIC( pSrc );
@@ -91,7 +90,7 @@ SymCryptAesCmacKeyCopy(
 
 VOID
 SYMCRYPT_CALL
-SymCryptAesCmac( 
+SymCryptAesCmac(
     _In_                                            PSYMCRYPT_AES_CMAC_EXPANDED_KEY pExpandedKey,
     _In_reads_( cbData )                            PCBYTE                          pbData,
                                                     SIZE_T                          cbData,
@@ -109,8 +108,8 @@ SymCryptAesCmac(
 
 VOID
 SYMCRYPT_CALL
-SymCryptAesCmacStateCopy( 
-    _In_        PCSYMCRYPT_AES_CMAC_STATE        pSrc, 
+SymCryptAesCmacStateCopy(
+    _In_        PCSYMCRYPT_AES_CMAC_STATE        pSrc,
     _In_opt_    PCSYMCRYPT_AES_CMAC_EXPANDED_KEY pExpandedKey,
     _Out_       PSYMCRYPT_AES_CMAC_STATE         pDst )
 {
@@ -133,7 +132,7 @@ SymCryptAesCmacStateCopy(
 
 VOID
 SYMCRYPT_CALL
-SymCryptAesCmacInit( 
+SymCryptAesCmacInit(
     _Out_   PSYMCRYPT_AES_CMAC_STATE        pState,
     _In_    PCSYMCRYPT_AES_CMAC_EXPANDED_KEY pExpandedKey)
 {
@@ -148,7 +147,7 @@ SymCryptAesCmacInit(
 
 VOID
 SYMCRYPT_CALL
-SymCryptAesCmacAppend( 
+SymCryptAesCmacAppend(
     _Inout_                 PSYMCRYPT_AES_CMAC_STATE    pState,
     _In_reads_( cbData )    PCBYTE                      pbData,
                             SIZE_T                      cbData )
@@ -179,7 +178,7 @@ SymCryptAesCmacAppend(
 
     //
     // At this point, either pState->bytesInBuf == 0, or it is !=0 but cbData is small enough that all the
-    // data will still fit in the buffer without further processing. 
+    // data will still fit in the buffer without further processing.
     //
 
     if( cbData > SYMCRYPT_AES_BLOCK_SIZE )
@@ -190,14 +189,17 @@ SymCryptAesCmacAppend(
         cbData -= bytesToDo;
     }
 
-    memcpy( &pState->buf[pState->bytesInBuf], pbData, cbData );
-    pState->bytesInBuf += cbData;
+    if( cbData > 0 )
+    {
+        memcpy( &pState->buf[pState->bytesInBuf], pbData, cbData );
+        pState->bytesInBuf += cbData;
+    }
 }
 
 
 VOID
 SYMCRYPT_CALL
-SymCryptAesCmacResult( 
+SymCryptAesCmacResult(
     _Inout_                                         PSYMCRYPT_AES_CMAC_STATE    pState,
     _Out_writes_( SYMCRYPT_AES_CMAC_RESULT_SIZE )   PBYTE                       pbResult )
 {
@@ -235,7 +237,7 @@ static const BYTE aesCmacKat[SYMCRYPT_AES_CMAC_RESULT_SIZE] = {
 
 VOID
 SYMCRYPT_CALL
-SymCryptAesCmacSelftest()
+SymCryptAesCmacSelftest(void)
 {
     SYMCRYPT_AES_CMAC_EXPANDED_KEY xKey;
     BYTE res[SYMCRYPT_AES_CMAC_RESULT_SIZE];
@@ -244,7 +246,7 @@ SymCryptAesCmacSelftest()
     SymCryptAesCmac( &xKey, SymCryptTestMsg3, sizeof( SymCryptTestMsg3 ), res );
 
     SymCryptInjectError( res, sizeof( res ) );
-    if( memcmp( res, aesCmacKat, sizeof( res ) ) != 0 ) 
+    if( memcmp( res, aesCmacKat, sizeof( res ) ) != 0 )
     {
         SymCryptFatal( 'hsh5' );
     }

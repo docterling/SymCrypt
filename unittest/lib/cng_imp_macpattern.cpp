@@ -7,7 +7,7 @@
 BCRYPT_ALG_HANDLE MacImpState<ImpXxx, AlgXxx>::hAlg;
 
 
-MacImp<ImpXxx, AlgXxx>::MacImp<ImpXxx, AlgXxx>()
+MacImp<ImpXxx, AlgXxx>::MacImp()
 {
     NTSTATUS status;
 
@@ -31,7 +31,7 @@ MacImp<ImpXxx, AlgXxx>::MacImp<ImpXxx, AlgXxx>()
 }
 
 template<>
-MacImp<ImpXxx, AlgXxx>::~MacImp<ImpXxx, AlgXxx>()
+MacImp<ImpXxx, AlgXxx>::~MacImp()
 {
     CHECK( state.hHash == 0, "Handle leak" );
     CHECK( NT_SUCCESS( CngCloseAlgorithmProviderFn( state.hAlg, 0 )), "Could not close CNG/" STRING( ALG_Name ) );
@@ -84,7 +84,7 @@ VOID MacImp<ImpXxx, AlgXxx>::result( _Out_writes_( cbResult ) PBYTE pbResult, SI
 {
     CHECK( NT_SUCCESS( CngFinishHashFn( state.hHash, pbResult, (ULONG) cbResult, 0 ) ),
         "Error finalizing CNG/" STRING( ALG_Name ) );
-    CHECK( NT_SUCCESS( CngDestroyHashFn( state.hHash ) ), "Error destoring CNG/" STRING( ALG_Name ) );
+    CHECK( NT_SUCCESS( CngDestroyHashFn( state.hHash ) ), "Error destroying CNG/" STRING( ALG_Name ) );
     state.hHash = 0;
 }
 
@@ -146,11 +146,11 @@ algImpDataPerfFunction<ImpXxx, AlgXxx>(PBYTE buf1, PBYTE buf2, PBYTE buf3, SIZE_
     {
         h = *(BCRYPT_HASH_HANDLE *) buf1;
         CHECK( NT_SUCCESS(CngHashDataFn  ( h, buf2, (ULONG) dataSize, 0 )), "" );
-        CHECK( NT_SUCCESS(CngFinishHashFn( h, buf3, (ULONG)(SYMCRYPT_XXX_RESULT_SIZE), 0 )), "" );
+        CHECK( NT_SUCCESS(CngFinishHashFn( h, buf3, (ULONG)(SCSHIM_XXX_RESULT_SIZE), 0 )), "" );
     } else {
         CHECK( NT_SUCCESS(CngCreateHashFn( MacImpState<ImpXxx, AlgXxx>::hAlg, &h, buf1 + 16, PERF_BUFFER_SIZE, buf3, (ULONG)*(SIZE_T *)buf1, 0 )), "" );
         CHECK( NT_SUCCESS(CngHashDataFn  ( h, buf2, (ULONG) dataSize, 0 )), "" );
-        CHECK( NT_SUCCESS(CngFinishHashFn( h, buf3, (ULONG)(SYMCRYPT_XXX_RESULT_SIZE), 0 )), "" );
+        CHECK( NT_SUCCESS(CngFinishHashFn( h, buf3, (ULONG)(SCSHIM_XXX_RESULT_SIZE), 0 )), "" );
         CHECK( NT_SUCCESS(CngDestroyHashFn( h )), "" );
     }
 }

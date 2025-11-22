@@ -18,8 +18,9 @@ SymCryptTwistedEdwardsFillScratchSpaces( _In_ PSYMCRYPT_ECURVE pCurve )
     // All the scratch space computations are upper bounded by the SizeofXXX bound (2^19) and
     // the SCRATCH_BYTES_FOR_XXX bound (2^24) (see symcrypt_internal.h).
     //
-    // One caveat is SymCryptSizeofEcpointEx which calculates the size of EcPoint with
-    // 4 coordinates (each one a modelement of max size 2^17). Thus upper bounded by 2^20.
+    // One caveat is SymCryptSizeofEcpointFromCurve and SymCryptSizeofEcpointEx which calculate
+    // the size of EcPoint with 4 coordinates (each one a modelement of max size 2^17). Thus upper
+    // bounded by 2^20.
     //
     // Another is the precomp points computation where the nPrecompPoints are up to
     // 2^SYMCRYPT_ECURVE_SW_DEF_WINDOW = 2^6 and the nRecodedDigits are equal to the
@@ -27,29 +28,31 @@ SymCryptTwistedEdwardsFillScratchSpaces( _In_ PSYMCRYPT_ECURVE pCurve )
     //
     // Thus cbScratchScalarMulti is upper bounded by 2^6*2^20 + 2*2^20*2^4 ~ 2^26.
     //
-  
+
     pCurve->cbScratchCommon = 8 * cbModElement + SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nDigits );
 
     pCurve->cbScratchScalar =
             (pCurve->cbModElement) +
-            2 * SymCryptSizeofEcpointEx( pCurve->cbModElement, SYMCRYPT_INTERNAL_NUMOF_COORDINATES( pCurve->eCoordinates ) ) +
+            2 * SymCryptSizeofEcpointFromCurve( pCurve ) +
             2 * SymCryptSizeofIntFromDigits( pCurve->GOrdDigits ) +
-            max( pCurve->cbScratchCommon, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->GOrdDigits ));
+            SYMCRYPT_MAX( pCurve->cbScratchCommon, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->GOrdDigits ));
 
     pCurve->cbScratchScalarMulti =
-            pCurve->info.sw.nPrecompPoints * SymCryptSizeofEcpointEx( pCurve->cbModElement, SYMCRYPT_INTERNAL_NUMOF_COORDINATES( pCurve->eCoordinates ) ) +
+            pCurve->info.sw.nPrecompPoints * SymCryptSizeofEcpointFromCurve( pCurve ) +
             ((2*pCurve->info.sw.nRecodedDigits * sizeof(UINT32) + SYMCRYPT_ASYM_ALIGN_VALUE - 1 )/SYMCRYPT_ASYM_ALIGN_VALUE) * SYMCRYPT_ASYM_ALIGN_VALUE;
 
-    pCurve->cbScratchGetSetValue = 
+    pCurve->cbScratchGetSetValue =
         SymCryptSizeofEcpointEx(cbModElement, SYMCRYPT_ECPOINT_FORMAT_MAX_LENGTH) +
         2 * cbModElement +
-        max(SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS(nDigitsFieldLength),
+        SYMCRYPT_MAX(SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS(nDigitsFieldLength),
         SYMCRYPT_SCRATCH_BYTES_FOR_MODINV(nDigitsFieldLength));
 
-    pCurve->cbScratchGetSetValue = max( pCurve->cbScratchGetSetValue, SymCryptSizeofIntFromDigits( nDigits ) );
+    pCurve->cbScratchGetSetValue = SYMCRYPT_MAX( pCurve->cbScratchGetSetValue, SymCryptSizeofIntFromDigits( nDigits ) );
 
-    pCurve->cbScratchEckey = pCurve->cbModElement + SymCryptSizeofIntFromDigits(SymCryptEcurveDigitsofScalarMultiplier(pCurve)) +
-        max( pCurve->cbScratchScalar + pCurve->cbScratchScalarMulti, pCurve->cbScratchGetSetValue );
+    pCurve->cbScratchEckey =
+        SYMCRYPT_MAX( pCurve->cbModElement + SymCryptSizeofIntFromDigits(SymCryptEcurveDigitsofScalarMultiplier(pCurve)),
+                SymCryptSizeofEcpointFromCurve( pCurve ) ) +
+        SYMCRYPT_MAX( pCurve->cbScratchScalar + pCurve->cbScratchScalarMulti, pCurve->cbScratchGetSetValue );
 }
 
 VOID
@@ -57,13 +60,12 @@ SYMCRYPT_CALL
 SymCryptTwistedEdwardsSetDistinguished(
     _In_    PCSYMCRYPT_ECURVE   pCurve,
     _Out_   PSYMCRYPT_ECPOINT   poDst,
-    _Out_writes_bytes_opt_( cbScratch )
+    _Out_writes_bytes_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
-    SYMCRYPT_ASSERT( pCurve != NULL );
-    SYMCRYPT_ASSERT(pCurve->type == SYMCRYPT_ECURVE_TYPE_TWISTED_EDWARDS);
-    SYMCRYPT_ASSERT( poDst != NULL );
+    SYMCRYPT_ASSERT( SYMCRYPT_CURVE_IS_TWISTED_EDWARDS_TYPE(pCurve) );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poDst->pCurve) );
 
     UNREFERENCED_PARAMETER( pbScratch );
     UNREFERENCED_PARAMETER( cbScratch );
@@ -76,14 +78,15 @@ SYMCRYPT_CALL
 SymCryptTwistedEdwardsIsZero(
     _In_    PCSYMCRYPT_ECURVE   pCurve,
     _In_    PCSYMCRYPT_ECPOINT  poSrc,
-    _Out_writes_bytes_opt_( cbScratch )
+    _Out_writes_bytes_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch)
 {
     PSYMCRYPT_MODULUS     pmMod = pCurve->FMod;
     UINT32 dResX = 0, dResY = 0;
 
-    SYMCRYPT_ASSERT( pCurve->type == SYMCRYPT_ECURVE_TYPE_TWISTED_EDWARDS );
+    SYMCRYPT_ASSERT( SYMCRYPT_CURVE_IS_TWISTED_EDWARDS_TYPE(pCurve) );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poSrc->pCurve) );
 
     UNREFERENCED_PARAMETER( pbScratch );
     UNREFERENCED_PARAMETER( cbScratch );
@@ -95,22 +98,22 @@ SymCryptTwistedEdwardsIsZero(
     dResX = SymCryptModElementIsZero( pmMod, peSrcX );
     dResY = SymCryptModElementIsEqual( pmMod, peSrcY, peSrcZ );
 
-    return ( dResX | dResY );
+    return ( dResX & dResY );
 }
 
 //
-// Verify that 
+// Verify that
 //   a * x^2 + y^2 = 1 + d * x^2 * y^2
-//   x = X/Z, y = Y/Z, 
+//   x = X/Z, y = Y/Z,
 // To avoid mod inv calculation which is expensive,
 // we verify Z^2(aX^2 + Y^2) = Z^4 + d * X^2 * Y^2
-// 
+//
 UINT32
 SYMCRYPT_CALL
 SymCryptTwistedEdwardsOnCurve(
     _In_    PCSYMCRYPT_ECURVE   pCurve,
     _In_    PCSYMCRYPT_ECPOINT  poSrc,
-    _Out_writes_bytes_opt_( cbScratch )
+    _Out_writes_bytes_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch)
 {
@@ -118,10 +121,13 @@ SymCryptTwistedEdwardsOnCurve(
     PSYMCRYPT_MODULUS     pmMod = pCurve->FMod;
     SIZE_T nBytes;
 
-    SYMCRYPT_ASSERT( pCurve->type == SYMCRYPT_ECURVE_TYPE_TWISTED_EDWARDS );
+    SYMCRYPT_ASSERT( SYMCRYPT_CURVE_IS_TWISTED_EDWARDS_TYPE(pCurve) );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poSrc->pCurve) );
     SYMCRYPT_ASSERT( cbScratch >= SYMCRYPT_INTERNAL_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS( pCurve ) );
 
     nBytes = SymCryptSizeofModElementFromModulus( pmMod );
+
+    SYMCRYPT_ASSERT( cbScratch >= 4*nBytes );
 
     for (UINT32 i = 0; i < 4; ++i)
     {
@@ -144,7 +150,7 @@ SymCryptTwistedEdwardsOnCurve(
     SymCryptModSquare( pmMod, peSrcZ, peTemp[2], pbScratch, cbScratch);
 
     // peTemp[3] = a * X^2
-   SymCryptModMul( pmMod, pCurve->A, peTemp[0], peTemp[3], pbScratch, cbScratch );
+    SymCryptModMul( pmMod, pCurve->A, peTemp[0], peTemp[3], pbScratch, cbScratch );
 
     // peTemp[3] = a * X^2 + Y^2
     SymCryptModAdd( pmMod, peTemp[3], peTemp[1], peTemp[3], pbScratch, cbScratch );
@@ -187,24 +193,27 @@ SymCryptTwistedEdwardsOnCurve(
 VOID
 SYMCRYPT_CALL
 SymCryptTwistedEdwardsDouble(
-     _In_    PCSYMCRYPT_ECURVE   pCurve,
-     _In_    PCSYMCRYPT_ECPOINT  poSrc,
-     _Out_   PSYMCRYPT_ECPOINT   poDst,
-     _In_    UINT32              flags,
-     _Out_writes_bytes_opt_(cbScratch)
-             PBYTE               pbScratch,
-             SIZE_T              cbScratch)
+    _In_    PCSYMCRYPT_ECURVE   pCurve,
+    _In_    PCSYMCRYPT_ECPOINT  poSrc,
+    _Out_   PSYMCRYPT_ECPOINT   poDst,
+            UINT32              flags,
+    _Out_writes_bytes_( cbScratch )
+            PBYTE               pbScratch,
+            SIZE_T              cbScratch)
 {
     PSYMCRYPT_MODELEMENT  peTemp[8];
     PSYMCRYPT_MODULUS     pmMod = pCurve->FMod;
     SIZE_T nBytes;
 
-    SYMCRYPT_ASSERT( pCurve->type == SYMCRYPT_ECURVE_TYPE_TWISTED_EDWARDS );
+    SYMCRYPT_ASSERT( SYMCRYPT_CURVE_IS_TWISTED_EDWARDS_TYPE(pCurve) );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poSrc->pCurve) && SymCryptEcurveIsSame(pCurve, poDst->pCurve) );
     SYMCRYPT_ASSERT( cbScratch >= SYMCRYPT_INTERNAL_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS( pCurve ) );
 
     UNREFERENCED_PARAMETER( flags );
 
     nBytes = SymCryptSizeofModElementFromModulus( pmMod );
+
+    SYMCRYPT_ASSERT( cbScratch >= 8*nBytes );
 
     for (UINT32 i = 0; i < 8; ++i)
     {
@@ -302,25 +311,28 @@ SymCryptTwistedEdwardsDouble(
 VOID
 SYMCRYPT_CALL
 SymCryptTwistedEdwardsAdd(
-     _In_    PCSYMCRYPT_ECURVE   pCurve,
-     _In_    PCSYMCRYPT_ECPOINT  poSrc1,
-     _In_    PCSYMCRYPT_ECPOINT  poSrc2,
-     _Out_   PSYMCRYPT_ECPOINT   poDst,
-     _In_    UINT32              flags,
-     _Out_writes_bytes_opt_(cbScratch)
-             PBYTE               pbScratch,
-             SIZE_T              cbScratch )
+    _In_    PCSYMCRYPT_ECURVE   pCurve,
+    _In_    PCSYMCRYPT_ECPOINT  poSrc1,
+    _In_    PCSYMCRYPT_ECPOINT  poSrc2,
+    _Out_   PSYMCRYPT_ECPOINT   poDst,
+            UINT32              flags,
+    _Out_writes_bytes_( cbScratch )
+            PBYTE               pbScratch,
+            SIZE_T              cbScratch )
 {
     PSYMCRYPT_MODELEMENT  peTemp[8];
     PSYMCRYPT_MODULUS     pmMod = pCurve->FMod;
     SIZE_T nBytes;
 
-    SYMCRYPT_ASSERT( pCurve->type == SYMCRYPT_ECURVE_TYPE_TWISTED_EDWARDS );
+    SYMCRYPT_ASSERT( SYMCRYPT_CURVE_IS_TWISTED_EDWARDS_TYPE(pCurve) );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poSrc1->pCurve) && SymCryptEcurveIsSame(pCurve, poSrc2->pCurve) && SymCryptEcurveIsSame(pCurve, poDst->pCurve) );
     SYMCRYPT_ASSERT( cbScratch >= SYMCRYPT_INTERNAL_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS( pCurve ) );
 
     UNREFERENCED_PARAMETER( flags );
 
     nBytes = SymCryptSizeofModElementFromModulus( pmMod );
+
+    SYMCRYPT_ASSERT( cbScratch >= 8*nBytes );
 
     for (UINT32 i = 0; i < 8; ++i)
     {
@@ -328,7 +340,7 @@ SymCryptTwistedEdwardsAdd(
        pbScratch += nBytes;
        cbScratch -= nBytes;
     }
-    
+
     PSYMCRYPT_MODELEMENT peSrc1X = SYMCRYPT_INTERNAL_ECPOINT_COORDINATE( 0, pCurve, poSrc1 );
     PSYMCRYPT_MODELEMENT peSrc1Y = SYMCRYPT_INTERNAL_ECPOINT_COORDINATE( 1, pCurve, poSrc1 );
     PSYMCRYPT_MODELEMENT peSrc1Z = SYMCRYPT_INTERNAL_ECPOINT_COORDINATE( 2, pCurve, poSrc1 );
@@ -411,20 +423,20 @@ SymCryptTwistedEdwardsAdd(
 VOID
 SYMCRYPT_CALL
 SymCryptTwistedEdwardsAddDiffNonZero(
-     _In_    PCSYMCRYPT_ECURVE   pCurve,
-     _In_    PCSYMCRYPT_ECPOINT  poSrc1,
-     _In_    PCSYMCRYPT_ECPOINT  poSrc2,
-     _Out_   PSYMCRYPT_ECPOINT   poDst,
-     _Out_writes_bytes_opt_(cbScratch)
-             PBYTE               pbScratch,
-             SIZE_T              cbScratch )
+    _In_    PCSYMCRYPT_ECURVE   pCurve,
+    _In_    PCSYMCRYPT_ECPOINT  poSrc1,
+    _In_    PCSYMCRYPT_ECPOINT  poSrc2,
+    _Out_   PSYMCRYPT_ECPOINT   poDst,
+    _Out_writes_bytes_(cbScratch)
+            PBYTE               pbScratch,
+            SIZE_T              cbScratch )
 {
     SymCryptTwistedEdwardsAdd( pCurve, poSrc1, poSrc2, poDst, 0, pbScratch, cbScratch );
 }
 
 //
 //  Verify poSrc1(X1, Y1, Z1, T1) = poSrc2(X2, Y2, Z2, T2)
-//  To avoid ModInv for 1/Z, we do 
+//  To avoid ModInv for 1/Z, we do
 //     X1 * Z2 = X2 * Z1, and
 //     Y1 * Z2 = Y2 * Z1
 //
@@ -437,7 +449,7 @@ SymCryptTwistedEdwardsIsEqual(
     _In_    PCSYMCRYPT_ECPOINT  poSrc1,
     _In_    PCSYMCRYPT_ECPOINT  poSrc2,
             UINT32              flags,
-    _Out_writes_bytes_opt_(cbScratch)
+    _Out_writes_bytes_(cbScratch)
             PBYTE               pbScratch,
             SIZE_T              cbScratch)
 {
@@ -450,10 +462,14 @@ SymCryptTwistedEdwardsIsEqual(
     UINT32  dResXN = 0;
     UINT32  dResY = 0;
 
-    SYMCRYPT_ASSERT( pCurve->type == SYMCRYPT_ECURVE_TYPE_TWISTED_EDWARDS );
+    SYMCRYPT_ASSERT( SYMCRYPT_CURVE_IS_TWISTED_EDWARDS_TYPE(pCurve) );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poSrc1->pCurve) && SymCryptEcurveIsSame(pCurve, poSrc2->pCurve) );
     SYMCRYPT_ASSERT( cbScratch >= SYMCRYPT_INTERNAL_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS( pCurve ) );
 
     nBytes = SymCryptSizeofModElementFromModulus( pmMod );
+
+    SYMCRYPT_ASSERT( cbScratch >= 2*nBytes );
+
     for (UINT32 i = 0; i < 2; ++i)
     {
         peTemp[i] = SymCryptModElementCreate( pbScratch, nBytes, pmMod );
@@ -472,7 +488,7 @@ SymCryptTwistedEdwardsIsEqual(
     // Setting the default flag if flags == 0
     flags |= (SYMCRYPT_MASK32_ZERO(flags) & SYMCRYPT_FLAG_ECPOINT_EQUAL);
 
-    // peTemp[0] = x1 * Z2
+    // peTemp[0] = X1 * Z2
     SymCryptModMul( pmMod, peSrc1X, peSrc2Z, peTemp[0], pbScratch, cbScratch );
 
     // peTemp[1] = X2 * Z1
@@ -484,10 +500,10 @@ SymCryptTwistedEdwardsIsEqual(
     SymCryptModNeg(pmMod, peTemp[1], peTemp[1], pbScratch, cbScratch);
     dResXN = SymCryptModElementIsEqual(pmMod, peTemp[0], peTemp[1]);
 
-    // peTemp[0] = y1 * Z2
+    // peTemp[0] = Y1 * Z2
     SymCryptModMul( pmMod, peSrc1Y, peSrc2Z, peTemp[0], pbScratch, cbScratch );
 
-    // peTemp[1] = y2 * Z1
+    // peTemp[1] = Y2 * Z1
     SymCryptModMul( pmMod, peSrc2Y, peSrc1Z, peTemp[1], pbScratch, cbScratch );
 
     dResY = SymCryptModElementIsEqual( pmMod, peTemp[0], peTemp[1] );
@@ -501,11 +517,12 @@ SYMCRYPT_CALL
 SymCryptTwistedEdwardsSetZero(
     _In_    PCSYMCRYPT_ECURVE   pCurve,
     _Out_   PSYMCRYPT_ECPOINT   poDst,
-    _Out_writes_bytes_opt_(cbScratch)
+    _Out_writes_bytes_(cbScratch)
             PBYTE               pbScratch,
             SIZE_T              cbScratch)
 {
-    SYMCRYPT_ASSERT( pCurve->type == SYMCRYPT_ECURVE_TYPE_TWISTED_EDWARDS );
+    SYMCRYPT_ASSERT( SYMCRYPT_CURVE_IS_TWISTED_EDWARDS_TYPE(pCurve) );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poDst->pCurve) );
     SYMCRYPT_ASSERT( cbScratch >= SYMCRYPT_INTERNAL_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS( pCurve ) );
 
     PSYMCRYPT_MODULUS  pmMod = pCurve->FMod;
@@ -527,7 +544,7 @@ SymCryptTwistedEdwardsNegate(
     _In_    PCSYMCRYPT_ECURVE   pCurve,
     _Inout_ PSYMCRYPT_ECPOINT   poSrc,
             UINT32              mask,
-    _Out_writes_bytes_opt_( cbScratch )
+    _Out_writes_bytes_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
@@ -537,12 +554,13 @@ SymCryptTwistedEdwardsNegate(
 
     PSYMCRYPT_MODELEMENT peTmp = NULL;
 
-    SYMCRYPT_ASSERT( pCurve->type == SYMCRYPT_ECURVE_TYPE_TWISTED_EDWARDS );
+    SYMCRYPT_ASSERT( SYMCRYPT_CURVE_IS_TWISTED_EDWARDS_TYPE(pCurve) );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poSrc->pCurve) );
     SYMCRYPT_ASSERT( cbScratch >= SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->FModDigits ) + pCurve->cbModElement );
 
-    peTmp = SymCryptModElementCreate( 
-                pbScratch, 
-                pCurve->cbModElement, 
+    peTmp = SymCryptModElementCreate(
+                pbScratch,
+                pCurve->cbModElement,
                 FMod );
     SYMCRYPT_ASSERT( peTmp != NULL);
 

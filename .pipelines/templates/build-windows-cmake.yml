@@ -1,0 +1,92 @@
+parameters:
+- name: targetArch
+  type: string
+  values:
+  - AMD64
+  - X86
+  - ARM64
+  - ARM
+- name: config
+  type: string
+  values:
+  - Debug
+  - Release
+- name: skipTests # Skip time-consuming tests for PR builds (e.g. no-ASM build)
+  type: boolean
+  default: false
+- name: additionalArgs # Additional arguments to pass to the build script
+  type: string
+  default: ''
+- name: identifier # Additional identifier for job name
+  type: string
+  default: ''
+- name: sign # Sign user-mode binaries. Required by Guardian, even though we don't publish Windows binaries from CMake
+  type: boolean
+  default: false
+- name: libcrux # Build with libcrux testing
+  type: boolean
+  default: false
+
+jobs:
+
+- job: Windows_${{parameters.targetArch}}_${{parameters.config}}_${{parameters.identifier}}
+  displayName: Windows ${{ parameters.targetArch }} ${{ parameters.config }} ${{ parameters.identifier }}
+
+  pool:
+    type: windows
+
+  variables:
+    ob_outputDirectory: $(Build.SourcesDirectory)\bin
+    ob_sdl_binskim_break: ${{ eq(parameters.config, 'Release') }} # Only break on binskim failures for Release binaries https://aka.ms/obpipelines/sdl
+    ${{ if eq(variables['system.debug'], true) }}:
+      verbose_build_flag: '--verbose'
+    ${{ else }}:
+      verbose_build_flag: ''
+    ${{ if eq(parameters.libcrux, true) }}:
+      libcrux_build_flag: '--libcrux'
+    ${{ else }}:
+      libcrux_build_flag: ''
+
+  steps:
+
+  - task: PythonScript@0
+    displayName: 'Run build script'
+    inputs:
+      scriptSource: 'filePath'
+      scriptPath: scripts\build.py
+      arguments: 'cmake bin --arch ${{ parameters.targetArch }} --config ${{ parameters.config }} ${{ parameters.additionalArgs }} $(verbose_build_flag) $(libcrux_build_flag)'
+      workingDirectory: $(Build.SourcesDirectory)
+
+  # Overwrite default artifact publishing with our copy (enables publishing binaries for failed runs)
+  - task: PowerShell@2
+    displayName: 'Overwrite .artifactignore'
+    inputs:
+      targetType: 'inline'
+      script: |
+        Copy-Item .artifactignore "$(ob_outputDirectory)\.artifactignore"
+  
+  - ${{ if ne(parameters.skipTests, true) }}:
+    - task: PythonScript@0
+      displayName: 'Run unit tests'
+      inputs:
+        scriptSource: 'filePath'
+        scriptPath: scripts\test.py
+        arguments: 'bin noperftests'
+        workingDirectory: $(Build.SourcesDirectory)
+
+    - task: PythonScript@0
+      displayName: 'Run dynamic unit tests'
+      inputs:
+        scriptSource: 'filePath'
+        scriptPath: scripts\test.py
+        arguments: 'bin dynamic:bin\exe\symcrypttestmodule.dll noperftests'
+        workingDirectory: $(Build.SourcesDirectory)
+
+    - task: onebranch.pipeline.signing@1 # https://aka.ms/obpipelines/signing
+      displayName: 'Sign Binaries'
+      condition: eq('${{ parameters.sign }}', true)
+      inputs:
+        command: 'sign'
+        signing_profile: 'external_distribution'
+        files_to_sign: '**\*.exe;**\*.dll' # Only supports user mode binaries
+        search_root: 'bin'

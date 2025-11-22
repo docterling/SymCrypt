@@ -1,6 +1,6 @@
 //
 // Kat implementation file
-// Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
+// Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
 #include "precomp.h"
@@ -11,18 +11,36 @@ CHAR charToLower( CHAR c )
 }
 
 
-String strip( const String & strIn )
+String strip( const String & strIn, bool stripAll = true )
+//
+// Strips whitespace from a string.
+// If stripAll is true, then all whitespace is removed, including newlines, unless the string
+// contains quotes, as whitespace must not be removed from string literals.
+// Otherwise, it only strips leading and trailing spaces and tabs.
+//
 {
     String s = strIn;
-    while( s.size() > 0 && (s[0] == ' ' || s[0] == '\t' ))
+    if(stripAll && strIn.find('"') == strIn.npos)
     {
-        s.erase( 0, 1 );
+        for(auto it = s.begin(); it != s.end(); )
+        {
+            if( *it == ' ' || *it == '\t' || *it == '\r' || *it == '\n' || *it == '\\' )
+            {
+                it = s.erase( it );
+            }
+            else
+            {
+                it++;
+            }
+        }
+    }
+    else
+    {
+        size_t start = s.find_first_not_of(" \t");
+        size_t end = s.find_last_not_of(" \t");
+        s = s.substr(start, end - start + 1);
     }
 
-    while( s.size() > 0 && (s[ s.size()-1 ] == ' ' || s[ s.size() - 1 ] == '\t' ) )
-    {
-        s.erase( s.size() - 1 );
-    }
     return s;
 }
 
@@ -31,6 +49,7 @@ String strip( const String & strIn )
 KatData::KatData( _In_ PSTR name, _In_ PCCHAR pbData, SIZE_T cbData )
 {
     m_line = 1;
+    m_pbStart = pbData;
     m_pbData = pbData;
     m_pbEnd = pbData + cbData;
     m_name = name;
@@ -42,19 +61,19 @@ KatData::line()
     return m_line;
 }
 
-int 
+int
 KatData::next()
 {
     return * m_pbData;
 }
 
-BOOL 
+BOOL
 KatData::isEmpty()
 {
     return m_pbData >= m_pbEnd;
 }
 
-VOID 
+VOID
 KatData::advance()
 {
     if( !isEmpty() )
@@ -67,7 +86,7 @@ KatData::advance()
     }
 }
 
-VOID 
+VOID
 KatData::skipSpace()
 {
     //
@@ -90,7 +109,7 @@ KatData::skipSpace()
     }
 }
 
-VOID 
+VOID
 KatData::skipNewlines()
 {
     while( !isEmpty() && atEol() )
@@ -99,14 +118,40 @@ KatData::skipNewlines()
     }
 }
 
-BOOL 
+BOOL
 KatData::atEol()
+//
+// Returns true if the next character points to an end-of-line character ('\r' or '\n'),
+// unless the end of line is escaped by a backslash. Returns false otherwise.
+//
 {
-    return isEmpty() || next() == '\r' || next() == '\n';
+    if( isEmpty() )
+    {
+        return TRUE;
+    }
+
+    UINT64 cbLookback = m_pbData - m_pbStart;
+
+    // Handle escaped newlines, both Unix style (\n) and Windows style (\r\n)
+    // For \r, check for \\\r
+    if( next() == '\r' && (cbLookback < 1 || m_pbData[-1] != '\\'))
+    {
+        return TRUE;
+    }
+    else if( next() == '\n' )
+    {
+        // For \n, check for \\\r\n or \\\n
+        if( (cbLookback < 2 || m_pbData[-1] != '\r' || m_pbData[-2] != '\\') &&
+            (cbLookback < 1 || m_pbData[-1] != '\\') )
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
 }
 
-
-VOID 
+VOID
 KatData::getKatItem( PKAT_ITEM pKatItem )
 {
     BOOL inDataSet = FALSE;
@@ -120,13 +165,13 @@ KatData::getKatItem( PKAT_ITEM pKatItem )
             //
             if( inDataSet )
             {
-                // 
+                //
                 // Found end of data set, return
                 //
                 skipNewlines();
                 pKatItem->type = KAT_TYPE_DATASET;
                 break;
-            } 
+            }
             else
             {
                 //
@@ -146,7 +191,7 @@ KatData::getKatItem( PKAT_ITEM pKatItem )
                 skipNewlines();
                 continue;
             }
-                
+
         }
 
         if( next() == '[' )
@@ -158,7 +203,7 @@ KatData::getKatItem( PKAT_ITEM pKatItem )
             {
                 FATAL2( "Missing blank line before category [...] marker on line %lld", line() );
             }
-            
+
             PCCHAR pbStart = m_pbData;
             LONGLONG startLine = m_line;
             while( !atEol() && next() != ']' )
@@ -173,7 +218,7 @@ KatData::getKatItem( PKAT_ITEM pKatItem )
 
             PCCHAR pbEnd = m_pbData;
             advance();      // skip ']'
-    
+
             skipSpace();
             if( !atEol() )
             {
@@ -189,7 +234,7 @@ KatData::getKatItem( PKAT_ITEM pKatItem )
 
         {
             //
-            // We must have a <id> = <data> pair 
+            // We must have a <id> = <data> pair
             //
             PCCHAR nameStart = m_pbData;
             LONGLONG startLine = m_line;
@@ -207,6 +252,7 @@ KatData::getKatItem( PKAT_ITEM pKatItem )
 
             advance();          // skip '='
             PCCHAR dataStart = m_pbData;
+
             while( !atEol() )
             {
                 advance();
@@ -216,7 +262,7 @@ KatData::getKatItem( PKAT_ITEM pKatItem )
             String name( nameStart, nameEnd - nameStart );
             String data( dataStart, dataEnd - dataStart );
 
-            name = strip( name );
+            name = strip( name, false );
             data = strip( data );
 
             if( !inDataSet )
@@ -257,7 +303,7 @@ KatData::getKatItem( PKAT_ITEM pKatItem )
                 advance();
             }
         }
-            
+
     }
 }
 
@@ -285,7 +331,7 @@ BYTE hexToByte( _In_reads_( 2 ) char * in, LONGLONG line )
 
 BString katParseData( String data, LONGLONG line )
 {
-    
+
     SIZE_T len = data.size();
     BString result;
 
@@ -298,24 +344,24 @@ BString katParseData( String data, LONGLONG line )
     if( data.find( "repeat" ) == 0 )
     {
         SIZE_T iOpen = data.find( '(' );
-        
+
         SIZE_T iClose = data.find( ')' );
         if( iOpen + 1 >= iClose || iOpen == data.npos || iClose == data.npos )
         {
 
             FATAL3( "Wrong parenthesis in repeat format, line %lld = %s", line, data.c_str() )
         }
-        
+
         String repeatStr = strip( data.substr( iOpen + 1, iClose ) );
-        
+
         int repValue = atoi( repeatStr.c_str() );
-        
+
         BString repData = katParseData( strip( data.substr( iClose+1 ) ), line );
         SIZE_T repLen = repData.size();
 
         PBYTE pResult = new BYTE[ repLen * repValue ];
         CHECK( pResult != NULL, "Out of memory" );
-      
+
         for( int i=0; i<repValue; i++ )
         {
             memcpy( pResult + i*repLen, repData.data(), repLen );
@@ -324,9 +370,9 @@ BString katParseData( String data, LONGLONG line )
         BString result( pResult, repLen * repValue );
 
         delete [] pResult;
-        
+
         return result;
-        
+
     }
 
     if( (len & 1) != 0 )
@@ -375,7 +421,7 @@ LONGLONG katParseInteger( KAT_ITEM &item, LPCSTR name )
     data = dataItem->data.c_str();
     if( data[0] == '0' && data[1] == 'x' )
     {
-        sscanf( data, "0x%llx", &res );
+        sscanf( data, "0x%" PRIx64, &res );
     } else {
         res = atol( data );
     }

@@ -8,7 +8,6 @@
 #include "precomp.h"
 
 // Truncating function according to the FIPS 186-4 standard
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptDsaTruncateHash(
@@ -53,7 +52,8 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
+#define SYMCRYPT_MAX_DSA_SIGNATURE_COUNT (100)
+
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptDsaSignEx(
@@ -102,14 +102,25 @@ SymCryptDsaSignEx(
     PSYMCRYPT_MODELEMENT peK = NULL;
     PSYMCRYPT_MODELEMENT peS = NULL;
 
+    UINT32 signatureCount = 0;
+
     UNREFERENCED_PARAMETER( flags );
+
+    // Make sure that the key may be used in DSA
+    if ( ((pKey->fAlgorithmInfo & SYMCRYPT_FLAG_DLKEY_DSA) == 0) )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
 
     // Make sure that the group and the key have all the
     // information for dsa, i.e. prime q and private key
-    // modulo q.
+    // modulo q, and we are not using a named DH safe-prime
+    // group
     if ((!pDlgroup->fHasPrimeQ) ||
         (!pKey->fHasPrivateKey) ||
-        (!pKey->fPrivateModQ))
+        (!pKey->fPrivateModQ) ||
+        (pDlgroup->isSafePrimeGroup))
     {
         scError = SYMCRYPT_INVALID_ARGUMENT;
         goto cleanup;
@@ -136,10 +147,10 @@ SymCryptDsaSignEx(
     // Thus the following calculation does not overflow cbScratch.
     //
     cbScratch = cbIntLarge + cbIntQ + cbIntP + cbModelementP + 4*cbModelementQ +
-                max( cbScratchInputK,
-                max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nDigitsOfQ ),
-                max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nDigitsOfP ),
-                max( SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( nDigitsOfP ),
+                SYMCRYPT_MAX( cbScratchInputK,
+                SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nDigitsOfQ ),
+                SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nDigitsOfP ),
+                SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( nDigitsOfP ),
                      SYMCRYPT_SCRATCH_BYTES_FOR_MODINV( nDigitsOfQ ) ))));
     pbScratch = SymCryptCallbackAlloc( cbScratch );
     if (pbScratch==NULL)
@@ -179,8 +190,10 @@ SymCryptDsaSignEx(
         goto cleanup;
     }
 
-    // Stop until both R,S are not zero
-    do
+    //
+    // Main loop: Stop when both R and S are not zero (unless a specific k is provided)
+    //
+    while( TRUE )
     {
         if (piK==NULL)
         {
@@ -262,13 +275,17 @@ SymCryptDsaSignEx(
                 cbScratchInternal );
 
         // Invert k mod q
-        SymCryptModInv(
+        scError = SymCryptModInv(
                 pDlgroup->pmQ,
                 peK,
                 peK,    // In place
-                0, 
+                0,
                 pbScratchInternal,
                 cbScratchInternal );
+        if( scError != SYMCRYPT_NO_ERROR )
+        {
+            goto cleanup;
+        }
 
         // Get the private key X to modelement
         // *** We are sure here that the digit
@@ -307,9 +324,28 @@ SymCryptDsaSignEx(
                 pbScratchInternal,
                 cbScratchInternal );
 
-    } while ( (piK == NULL) &&
-              ( SymCryptModElementIsZero( pDlgroup->pmQ, peRmodQ ) ||
-                SymCryptModElementIsZero( pDlgroup->pmQ, peS ) ) );
+        if ( !( SymCryptModElementIsZero( pDlgroup->pmQ, peRmodQ ) |
+                SymCryptModElementIsZero( pDlgroup->pmQ, peS ) ) )
+        {
+            break;
+        }
+
+        if (piK != NULL)
+        {
+            // piK resulted in 0 signature
+            scError = SYMCRYPT_INVALID_ARGUMENT;
+            goto cleanup;
+        }
+
+        signatureCount++;
+        if ( signatureCount >= SYMCRYPT_MAX_DSA_SIGNATURE_COUNT )
+        {
+            // We have not generated a non-zero signature after SYMCRYPT_MAX_DSA_SIGNATURE_COUNT attempts;
+            // Something is wrong with the group setup
+            scError = SYMCRYPT_INVALID_ARGUMENT;
+            goto cleanup;
+        }
+    }
 
     // Output R
     scError = SymCryptModElementGetValue(
@@ -354,7 +390,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptDsaSign(
@@ -370,7 +405,6 @@ SymCryptDsaSign(
 }
 
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptDsaVerify(
@@ -420,8 +454,15 @@ SymCryptDsaVerify(
 
     UNREFERENCED_PARAMETER( flags );
 
-    // Make sure that the group and the key has a prime q
-    if (!pDlgroup->fHasPrimeQ)
+    // Make sure that the key may be used in DSA
+    if ( ((pKey->fAlgorithmInfo & SYMCRYPT_FLAG_DLKEY_DSA) == 0) )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
+
+    // Make sure that the group has a prime q, and we are not using a named DH safe-prime group
+    if (!pDlgroup->fHasPrimeQ || pDlgroup->isSafePrimeGroup)
     {
         scError = SYMCRYPT_INVALID_ARGUMENT;
         goto cleanup;
@@ -429,7 +470,7 @@ SymCryptDsaVerify(
 
     // Calculate the digit sizes
     ndIntLarge = SymCryptDigitsFromBits( (UINT32)cbHashValue * 8 );
-    ndIntLarge = max( ndIntLarge, SymCryptDigitsFromBits( (UINT32)cbSignature * 4 ) );  // pbSignature contains (R,S)
+    ndIntLarge = SYMCRYPT_MAX( ndIntLarge, SymCryptDigitsFromBits( (UINT32)cbSignature * 4 ) );  // pbSignature contains (R,S)
 
     // Calculate the sizes of temp objects
     cbIntLarge = SymCryptSizeofIntFromDigits(ndIntLarge);
@@ -446,10 +487,10 @@ SymCryptDsaVerify(
     // Thus the following calculation does not overflow cbScratch.
     //
     cbScratch = cbIntLarge + cbIntP + 2*cbIntQ + cbModelementP + 3*cbModelementQ +
-                max( SYMCRYPT_SCRATCH_BYTES_FOR_INT_DIVMOD(nDigitsOfP,nDigitsOfQ),
-                max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nDigitsOfQ ),
-                max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nDigitsOfP ),
-                max( SYMCRYPT_SCRATCH_BYTES_FOR_MODMULTIEXP( SymCryptModulusDigitsizeOfObject(pDlgroup->pmP), 2, pDlgroup->nBitsOfQ ),
+                SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_INT_DIVMOD(nDigitsOfP,nDigitsOfQ),
+                SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nDigitsOfQ ),
+                SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nDigitsOfP ),
+                SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_MODMULTIEXP( SymCryptModulusDigitsizeOfObject(pDlgroup->pmP), 2, pDlgroup->nBitsOfQ ),
                      SYMCRYPT_SCRATCH_BYTES_FOR_MODINV( nDigitsOfQ ) ))));
     pbScratch = SymCryptCallbackAlloc( cbScratch );
     if (pbScratch==NULL)
@@ -533,7 +574,11 @@ SymCryptDsaVerify(
     // S is part of the signature and therefore not a secret.
     // We mark it public to avoid the use of random blinding, which would require a source of randomness
     // just to verify a DSA signature.
-    SymCryptModInv( pDlgroup->pmQ, peS, peS, SYMCRYPT_FLAG_DATA_PUBLIC, pbScratchInternal, cbScratchInternal );
+    scError = SymCryptModInv( pDlgroup->pmQ, peS, peS, SYMCRYPT_FLAG_DATA_PUBLIC, pbScratchInternal, cbScratchInternal );
+    if( scError != SYMCRYPT_NO_ERROR )
+    {
+        goto cleanup;
+    }
 
     // Get the message into a modelement
     scError = SymCryptDsaTruncateHash(
@@ -590,7 +635,7 @@ SymCryptDsaVerify(
     peBases[1] = pKey->pePublicKey;
 
     // v = G^U1 * Y^U2
-    SymCryptModMultiExp(
+    scError = SymCryptModMultiExp(
                 pDlgroup->pmP,
                 peBases,
                 piIntQ,
@@ -600,6 +645,10 @@ SymCryptDsaVerify(
                 peResP,
                 pbScratchInternal,
                 cbScratchInternal );
+    if (scError!=SYMCRYPT_NO_ERROR)
+    {
+        goto cleanup;
+    }
 
     // Convert V to a modelement modulo Q
     SymCryptModElementToInt(

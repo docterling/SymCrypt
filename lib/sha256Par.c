@@ -10,10 +10,7 @@
 
 #include "precomp.h"
 
-extern __declspec( align( 256 ) ) const UINT32 SymCryptSha256K[64];
-
-#define PAR_SCRATCH_ELEMENTS    (4+8+64)        // # scratch elements our parallel impementations need
-
+extern SYMCRYPT_ALIGN_AT( 256 ) const UINT32 SymCryptSha256K[64];
 
 
 //
@@ -40,7 +37,7 @@ extern __declspec( align( 256 ) ) const UINT32 SymCryptSha256K[64];
 
 VOID
 SYMCRYPT_CALL
-SymCryptParallelSha256AppendBytes_serial( 
+SymCryptParallelSha256AppendBytes_serial(
     _Inout_updates_( nPar )                 PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE * pWork,
     _In_range_(1, MAX_PARALLEL)             SIZE_T                                  nPar,
                                             SIZE_T                                  nBytes );
@@ -68,7 +65,7 @@ SymCryptParallelSha256Init(
 // No parallel support on this CPU
 //
 
-VOID
+SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptParallelSha256Process(
     _Inout_updates_( nStates )      PSYMCRYPT_SHA256_STATE              pStates,
@@ -78,7 +75,7 @@ SymCryptParallelSha256Process(
     _Out_writes_( cbScratch )       PBYTE                               pbScratch,
                                     SIZE_T                              cbScratch )
 {
-    SymCryptParallelHashProcess_serial( SymCryptParallelSha256Algorithm, pStates, nStates, pOperations, nOperations, pbScratch, cbScratch );
+    return SymCryptParallelHashProcess_serial( SymCryptParallelSha256Algorithm, pStates, nStates, pOperations, nOperations, pbScratch, cbScratch );
 }
 #endif
 
@@ -100,16 +97,16 @@ SymCryptParallelSha256Process(
 BOOLEAN
 SYMCRYPT_CALL
 SymCryptParallelSha256Result1(
-    _In_    PCSYMCRYPT_PARALLEL_HASH pParHash, 
-    _Inout_ PSYMCRYPT_COMMON_HASH_STATE pState, 
-    _Inout_ PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratch,    
+    _In_    PCSYMCRYPT_PARALLEL_HASH pParHash,
+    _Inout_ PSYMCRYPT_COMMON_HASH_STATE pState,
+    _Inout_ PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratch,
     _Out_   BOOLEAN *pRes)
 {
     UINT32 bytesInBuffer = pState->bytesInBuffer;
 
     UNREFERENCED_PARAMETER( pParHash );
     //
-    // Function is called when a Result is requested from a parallel hashs state.
+    // Function is called when a Result is requested from a parallel hash state.
     // Do the first step of the padding.
     //
     pState->buffer[bytesInBuffer++] = 0x80;
@@ -135,9 +132,9 @@ SymCryptParallelSha256Result1(
 BOOLEAN
 SYMCRYPT_CALL
 SymCryptParallelSha256Result2(
-    _In_    PCSYMCRYPT_PARALLEL_HASH                pParHash, 
-    _Inout_ PSYMCRYPT_COMMON_HASH_STATE             pState, 
-    _Inout_ PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE   pScratch,    
+    _In_    PCSYMCRYPT_PARALLEL_HASH                pParHash,
+    _Inout_ PSYMCRYPT_COMMON_HASH_STATE             pState,
+    _Inout_ PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE   pScratch,
     _Out_   BOOLEAN *pRes)
 {
     UNREFERENCED_PARAMETER( pParHash );
@@ -153,11 +150,11 @@ SymCryptParallelSha256Result2(
     return TRUE;
 }
 
-VOID 
-SYMCRYPT_CALL 
+VOID
+SYMCRYPT_CALL
 SymCryptParallelSha256ResultDone(
-    _In_    PCSYMCRYPT_PARALLEL_HASH            pParHash, 
-    _Inout_ PSYMCRYPT_COMMON_HASH_STATE         pState, 
+    _In_    PCSYMCRYPT_PARALLEL_HASH            pParHash,
+    _Inout_ PSYMCRYPT_COMMON_HASH_STATE         pState,
     _In_    PCSYMRYPT_PARALLEL_HASH_OPERATION   pOp)
 {
     PSYMCRYPT_SHA256_STATE  pSha256State = (PSYMCRYPT_SHA256_STATE) pState;
@@ -199,12 +196,12 @@ SymCryptParallelSha256SetNextWork( PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratc
         // STATE_NEXT: cbData == 0 and we have to process the remaining operations.
         // STATE_DATA_START: We are working on the next operation; the first BytesAlreadyProcessed have been hashed,
         //                      and the hash state has an empty buffer.
-        // STATE_DATA_END: We are working on the next operation (an append), and pbData/cbData have whatever partial block remains 
+        // STATE_DATA_END: We are working on the next operation (an append), and pbData/cbData have whatever partial block remains
         //                  after all the whole blocks have been processed.
         // STATE_PAD2:      We are working on the next operation (a result), and have processed the first half of a 2-block padding.
         // STATE_RESULT:    We are working on the next operation (a result), and have processed all the padding.
         //
-        // The pState->dataLength is updated whenver we copy bytes from the append into the state's buffer, or when
+        // The pState->dataLength is updated whenever we copy bytes from the append into the state's buffer, or when
         //      we return TRUE and process bulk data.
         //
         pOp = pScratch->next;
@@ -226,13 +223,13 @@ SymCryptParallelSha256SetNextWork( PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratc
                 pState->dataLengthL += pOp->cbBuffer;
                 if( bytesInBuffer > 0 )
                 {
-                    todo = (UINT32) min( SYMCRYPT_SHA256_INPUT_BLOCK_SIZE - bytesInBuffer, pOp->cbBuffer );
+                    todo = (UINT32) SYMCRYPT_MIN( SYMCRYPT_SHA256_INPUT_BLOCK_SIZE - bytesInBuffer, pOp->cbBuffer );
                     memcpy( &pState->buffer[bytesInBuffer], pOp->pbBuffer, todo );
                     pState->bytesInBuffer += todo;
                     if( pState->bytesInBuffer == SYMCRYPT_SHA256_INPUT_BLOCK_SIZE )
                     {
                         //
-                        // We filled the buffer; set it for processing. 
+                        // We filled the buffer; set it for processing.
                         // Remember the # bytes we did and set the next state to process the rest of the request.
                         //
                         pScratch->pbData = &pState->buffer[0];
@@ -283,7 +280,7 @@ SymCryptParallelSha256SetNextWork( PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratc
                 }
             } else {
                 SYMCRYPT_ASSERT( pOp->hashOperation == SYMCRYPT_HASH_OPERATION_RESULT );
-                
+
                 pState->buffer[bytesInBuffer++] = 0x80;
                 SymCryptWipe( &pState->buffer[bytesInBuffer], SYMCRYPT_SHA256_INPUT_BLOCK_SIZE - bytesInBuffer );
 
@@ -353,7 +350,7 @@ SymCryptParallelSha256SetNextWork( PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratc
             SymCryptUint32ToMsbFirst( &pState->chain.H[0], pOp->pbBuffer, 8 );
             SymCryptWipeKnownSize( pState, sizeof( *pState ));
             SymCryptSha256Init( pState );
-            
+
             pScratch->next = pOp->next;
             pScratch->processingState = STATE_NEXT;
             continue;
@@ -380,7 +377,7 @@ SymCryptParallelSha256SetNextWork( PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratc
             //
             if( bytesInBuffer > 0 )
             {
-                todo = min( SYMCRYPT_SHA256_INPUT_BLOCK_SIZE - bytesInBuffer, pState->cbData );
+                todo = SYMCRYPT_MIN( SYMCRYPT_SHA256_INPUT_BLOCK_SIZE - bytesInBuffer, pState->cbData );
                 memcpy( &pState->internalState.hashState.buffer[bytesInBuffer], pState->pbData, todo );
                 pState->pbData += todo;
                 pState->cbData -= todo;
@@ -388,12 +385,12 @@ SymCryptParallelSha256SetNextWork( PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratc
 
                 //
                 // We don't parallelize the processing of the first block to get to the whole-block state.
-                // It would mean we get a 1-size block up front, and that interferes with the sorted schedulign
+                // It would mean we get a 1-size block up front, and that interferes with the sorted scheduling
                 // we do. This is not a common case, and we document that this is inefficient.
                 //
                 if( (pState->internalState.hashState.dataLength & (SYMCRYPT_SHA256_INPUT_BLOCK_SIZE - 1)) == 0 )
                 {
-                    SymCryptSha256AppendBlocks( &pState->internalState.hashState.chain, 
+                    SymCryptSha256AppendBlocks( &pState->internalState.hashState.chain,
                                                 &pState->internalState.hashState.buffer[0],
                                                 SYMCRYPT_SHA256_INPUT_BLOCK_SIZE );
                 }
@@ -405,13 +402,13 @@ SymCryptParallelSha256SetNextWork( PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratc
                 // We have more bytes to do; this means that the internal buffer is empty.
                 // Set the data blocks up for processing. We increment the dataLength here
                 // as that is part of this function, not of the processing code.
-                // 
+                //
                 pState->internalState.processingState = DATA;
                 pState->internalState.hashState.dataLength += pState->cbData & ~(SYMCRYPT_SHA256_INPUT_BLOCK_SIZE - 1);
                 return TRUE;
             }
 
-        } 
+        }
 
         //
         // FALL THROUGH TO THE DATA PROCESSING
@@ -421,7 +418,7 @@ SymCryptParallelSha256SetNextWork( PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratc
         // - We have no bytes left to hash, but the internal buffer might contain data.
         // The first case is exactly what we get after DATA processing.
         // The second case is trivially handled by the same code paths as the first one.
-        // Instead of duplicating the code, 
+        // Instead of duplicating the code,
         // we fall through to the DATA section.
         //
 
@@ -516,7 +513,7 @@ SymCryptParallelSha256SetNextWork( PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratc
 C_ASSERT( (SYMCRYPT_SIMD_ELEMENT_SIZE & (SYMCRYPT_SIMD_ELEMENT_SIZE - 1 )) == 0 );  // check that it is a power of 2
 
 
-VOID
+SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptParallelSha256Process(
     _Inout_updates_( nStates )      PSYMCRYPT_SHA256_STATE              pStates,
@@ -526,6 +523,7 @@ SymCryptParallelSha256Process(
     _Out_writes_( cbScratch )       PBYTE                               pbScratch,
                                     SIZE_T                              cbScratch )
 {
+    SYMCRYPT_ERROR scError = SYMCRYPT_NO_ERROR;
     UINT32 maxParallel;
 
 #if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
@@ -534,31 +532,30 @@ SymCryptParallelSha256Process(
     if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURE_AVX2 ) && SymCryptSaveYmm( &SaveState ) == SYMCRYPT_NO_ERROR )
     {
         maxParallel = 8;
-
-        SymCryptParallelHashProcess(    SymCryptParallelSha256Algorithm,
-                                        pStates,
-                                        nStates,
-                                        pOperations,
-                                        nOperations,
-                                        pbScratch,
-                                        cbScratch,
-                                        maxParallel );
+        scError = SymCryptParallelHashProcess(  SymCryptParallelSha256Algorithm,
+                                                pStates,
+                                                nStates,
+                                                pOperations,
+                                                nOperations,
+                                                pbScratch,
+                                                cbScratch,
+                                                maxParallel );
 
         SymCryptRestoreYmm( &SaveState );
     } else if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURE_SSSE3 ) && SymCryptSaveXmm( &SaveState ) == SYMCRYPT_NO_ERROR )
     {
         maxParallel = 4;
-        SymCryptParallelHashProcess(    SymCryptParallelSha256Algorithm,
-                                        pStates,
-                                        nStates,
-                                        pOperations,
-                                        nOperations,
-                                        pbScratch,
-                                        cbScratch,
-                                        maxParallel );
+        scError = SymCryptParallelHashProcess(  SymCryptParallelSha256Algorithm,
+                                                pStates,
+                                                nStates,
+                                                pOperations,
+                                                nOperations,
+                                                pbScratch,
+                                                cbScratch,
+                                                maxParallel );
         SymCryptRestoreXmm( &SaveState );
     } else {
-        SymCryptParallelHashProcess_serial( SymCryptParallelSha256Algorithm, pStates, nStates, pOperations, nOperations, pbScratch, cbScratch );
+        scError = SymCryptParallelHashProcess_serial( SymCryptParallelSha256Algorithm, pStates, nStates, pOperations, nOperations, pbScratch, cbScratch );
     }
 
 #elif SYMCRYPT_CPU_ARM
@@ -566,24 +563,25 @@ SymCryptParallelSha256Process(
 
     if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURE_NEON ) )
     {
-        SymCryptParallelHashProcess(    SymCryptParallelSha256Algorithm,
-                                        pStates,
-                                        nStates,
-                                        pOperations,
-                                        nOperations,
-                                        pbScratch,
-                                        cbScratch,
-                                        maxParallel );
+        scError = SymCryptParallelHashProcess(  SymCryptParallelSha256Algorithm,
+                                                pStates,
+                                                nStates,
+                                                pOperations,
+                                                nOperations,
+                                                pbScratch,
+                                                cbScratch,
+                                                maxParallel );
     } else {
-        SymCryptParallelHashProcess_serial( SymCryptParallelSha256Algorithm, pStates, nStates, pOperations, nOperations, pbScratch, cbScratch );
+        scError = SymCryptParallelHashProcess_serial( SymCryptParallelSha256Algorithm, pStates, nStates, pOperations, nOperations, pbScratch, cbScratch );
     }
 #else
-        SymCryptParallelHashProcess_serial( SymCryptParallelSha256Algorithm, pStates, nStates, pOperations, nOperations, pbScratch, cbScratch );
+    scError = SymCryptParallelHashProcess_serial( SymCryptParallelSha256Algorithm, pStates, nStates, pOperations, nOperations, pbScratch, cbScratch );
 #endif
+    return scError;
 }
 
 
-#if  SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 
+#if  SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
 //
 // Code that uses the XMM registers.
 //
@@ -629,11 +627,11 @@ SymCryptParallelSha256Process(
 
 VOID
 SYMCRYPT_CALL
-SymCryptParallelSha256AppendBlocks_xmm( 
+SymCryptParallelSha256AppendBlocks_xmm(
     _Inout_updates_( 4 )                                PSYMCRYPT_SHA256_CHAINING_STATE   * pChain,
     _Inout_updates_( 4 )                                PCBYTE                            * ppByte,
                                                         SIZE_T                              nBytes,
-    _Out_writes_( PAR_SCRATCH_ELEMENTS )                __m128i                           * pScratch )
+    _Out_writes_( PAR_SCRATCH_ELEMENTS_256 )            __m128i                           * pScratch )
 {
     //
     // Implementation that uses 4 lanes in the XMM registers
@@ -647,7 +645,7 @@ SymCryptParallelSha256AppendBlocks_xmm(
     int r;
 
     //
-    // The chaining state can be unaligned on x86, so we use unalgned loads
+    // The chaining state can be unaligned on x86, so we use unaligned loads
     //
 
     T0 = _mm_loadu_si128( (__m128i *)&pChain[0]->H[0] );
@@ -697,7 +695,7 @@ SymCryptParallelSha256AppendBlocks_xmm(
 
             //
             // Macro for one word of message expansion.
-            // Invariant: 
+            // Invariant:
             // on entry: a = W[r-1], b = W[r-2], d = W[r-16]
             // on exit:  W[r] computed, a = W[r-1], b = W[r], c = W[r-15]
             //
@@ -720,15 +718,15 @@ SymCryptParallelSha256AppendBlocks_xmm(
         for( r=0; r<64; r += 4 )
         {
             //
-            // Loop invariant: 
+            // Loop invariant:
             // A, B, C, and D are the a,b,c,d values of the current state.
             // W[r] is the next expanded message word to be processed.
-            // W[r-8 .. r-5] contain the current state words h, g, f, e. 
+            // W[r-8 .. r-5] contain the current state words h, g, f, e.
             //
 
             //
             // Macro to compute one round
-            // 
+            //
             #define DO_ROUND( a, b, c, d, t, r ) \
                 t = W[r]; \
                 t = _mm_add_epi32( t, CSIGMA1XMM( W[r-5] ) ); \
@@ -775,249 +773,6 @@ SymCryptParallelSha256AppendBlocks_xmm(
 
 }
 
-
-//
-// Code that uses the YMM registers.
-//
-
-#define MAJYMM( x, y, z ) _mm256_or_si256( _mm256_and_si256( _mm256_or_si256( z, y ), x ), _mm256_and_si256( z, y ))
-#define CHYMM( x, y, z )  _mm256_xor_si256( _mm256_and_si256( _mm256_xor_si256( z, y ), x ), z )
-
-#define CSIGMA0YMM( x ) \
-    _mm256_xor_si256( _mm256_xor_si256( _mm256_xor_si256( _mm256_xor_si256( _mm256_xor_si256( \
-        _mm256_slli_epi32(x,30)  , _mm256_srli_epi32(x,  2) ),\
-        _mm256_slli_epi32(x,19) ), _mm256_srli_epi32(x, 13) ),\
-        _mm256_slli_epi32(x,10) ), _mm256_srli_epi32(x, 22) )
-#define CSIGMA1YMM( x ) \
-    _mm256_xor_si256( _mm256_xor_si256( _mm256_xor_si256( _mm256_xor_si256( _mm256_xor_si256( \
-        _mm256_slli_epi32(x,26)  , _mm256_srli_epi32(x,  6) ),\
-        _mm256_slli_epi32(x,21) ), _mm256_srli_epi32(x, 11) ),\
-        _mm256_slli_epi32(x,7) ), _mm256_srli_epi32(x, 25) )
-#define LSIGMA0YMM( x ) \
-    _mm256_xor_si256( _mm256_xor_si256( _mm256_xor_si256( _mm256_xor_si256( \
-        _mm256_slli_epi32(x,25)  , _mm256_srli_epi32(x,  7) ),\
-        _mm256_slli_epi32(x,14) ), _mm256_srli_epi32(x, 18) ),\
-        _mm256_srli_epi32(x, 3) )
-#define LSIGMA1YMM( x ) \
-    _mm256_xor_si256( _mm256_xor_si256( _mm256_xor_si256( _mm256_xor_si256( \
-        _mm256_slli_epi32(x,15)  , _mm256_srli_epi32(x, 17) ),\
-        _mm256_slli_epi32(x,13) ), _mm256_srli_epi32(x, 19) ),\
-        _mm256_srli_epi32(x,10) )
-
-//
-// Transpose macro, convert S0..S7 into R0..R7; R0 is the lane 0, R3 is lane 7.
-//
-// 
-// S0 = S00, S01, S02, S03,  S04, S05, S06, S07
-// S1 = S10, S11, S12, S13,  S14, S15, S16, S17
-// S2 = S20, S21, S22, S23,  S24, S25, S26, S27
-// S3 = S30, S31, S32, S33,  S34, S35, S36, S37
-// S4 = S40, S41, S42, S43,  S44, S45, S46, S47
-// S5 = S50, S51, S52, S53,  S54, S55, S56, S57
-// S6 = S60, S61, S62, S63,  S64, S65, S66, S67
-// S7 = S70, S71, S72, S73,  S74, S75, S76, S77
-//
-// T0 = S00, S10, S01, S11,  S04, S14, S05, S15
-// T1 = S02, S12, S03, S13,  S06, S16, S07, S17
-// T2 = S20, S30, S21, S31,  S24, S34, S25, S35
-// T3 = S22, S32, S23, S33,  S26, S36, S27, S37
-// T4 = S40, S50, S41, S51,  S44, S54, S45, S55
-// T5 = S42, S52, S43, S53,  S46, S56, S47, S57
-// T6 = S60, S70, S61, S71,  S64, S74, S65, S75
-// T7 = S62, S72, S63, S73,  S66, S76, S67, S77
-//
-// U0 = S00, S10, S20, S30,  S04, S14, S24, S34
-// U1 = S01, S11, S21, S31,  S05, S15, S25, S35
-// U2 = S02, S12, S22, S32,  S06, S16, S26, S36
-// U3 = S03, S13, S23, S33,  S07, S17, S27, S37
-// U4 = S40, S50, S60, S70,  S44, S54, S64, S74
-// U5 = S41, S51, S61, S71,  S45, S55, S65, S75
-// U6 = S42, S52, S62, S72,  S46, S56, S66, S76
-// U7 = S43, S53, S63, S73,  S47, S47, S67, S77
-// 
-// R0 = s00, s10, s20, s30,  s40, s50, s60, s70
-// R1 = s01, s11, s21, s31,  s41, s51, s61, s71
-// R2 = s02, s12, s22, s32,  s42, s52, s62, s72
-// R3 = s03, s13, s23, s33,  s43, s53, s63, s73
-// R4 = s04, s14, s24, s34,  s44, s54, s64, s74
-// R5 = s05, s15, s25, s35,  s45, s55, s65, s75
-// R6 = s06, s16, s26, s36,  s46, s56, s66, s76
-// R7 = s07, s17, s27, s37,  s47, s57, s67, s77
-// 
-#define YMM_TRANSPOSE_32( _R0, _R1, _R2, _R3, _R4, _R5, _R6, _R7, _S0, _S1, _S2, _S3, _S4, _S5, _S6, _S7 ) \
-    {\
-        __m256i _T0, _T1, _T2, _T3, _T4, _T5, _T6, _T7;\
-        __m256i _U0, _U1, _U2, _U3, _U4, _U5, _U6, _U7;\
-        _T0 = _mm256_unpacklo_epi32( _S0, _S1 );  _T1 = _mm256_unpackhi_epi32( _S0, _S1 );\
-        _T2 = _mm256_unpacklo_epi32( _S2, _S3 );  _T3 = _mm256_unpackhi_epi32( _S2, _S3 );\
-        _T4 = _mm256_unpacklo_epi32( _S4, _S5 );  _T5 = _mm256_unpackhi_epi32( _S4, _S5 );\
-        _T6 = _mm256_unpacklo_epi32( _S6, _S7 );  _T7 = _mm256_unpackhi_epi32( _S6, _S7 );\
-        \
-        _U0 = _mm256_unpacklo_epi64( _T0, _T2 );  _U1 = _mm256_unpackhi_epi64( _T0, _T2 );\
-        _U2 = _mm256_unpacklo_epi64( _T1, _T3 );  _U3 = _mm256_unpackhi_epi64( _T1, _T3 );\
-        _U4 = _mm256_unpacklo_epi64( _T4, _T6 );  _U5 = _mm256_unpackhi_epi64( _T4, _T6 );\
-        _U6 = _mm256_unpacklo_epi64( _T5, _T7 );  _U7 = _mm256_unpackhi_epi64( _T5, _T7 );\
-        \
-        _R0 = _mm256_permute2x128_si256( _U0, _U4, 0x20 );  _R1 = _mm256_permute2x128_si256( _U1, _U5, 0x20);\
-        _R2 = _mm256_permute2x128_si256( _U2, _U6, 0x20 );  _R3 = _mm256_permute2x128_si256( _U3, _U7, 0x20);\
-        _R4 = _mm256_permute2x128_si256( _U0, _U4, 0x31 );  _R5 = _mm256_permute2x128_si256( _U1, _U5, 0x31);\
-        _R6 = _mm256_permute2x128_si256( _U2, _U6, 0x31 );  _R7 = _mm256_permute2x128_si256( _U3, _U7, 0x31);\
-    }
-
-VOID
-SYMCRYPT_CALL
-SymCryptParallelSha256AppendBlocks_ymm( 
-    _Inout_updates_( 8 )                                PSYMCRYPT_SHA256_CHAINING_STATE   * pChain,
-    _Inout_updates_( 8 )                                PCBYTE                            * ppByte,
-                                                        SIZE_T                              nBytes,
-    _Out_writes_( PAR_SCRATCH_ELEMENTS )                __m256i                           * pScratch )
-{
-    //
-    // Implementation that uses 8 lanes in the YMM registers
-    //
-    __m256i * buf = pScratch;
-    __m256i * W = &buf[4 + 8];
-    __m256i * ha = &buf[4]; // initial state words, in order h, g, ..., b, a
-    __m256i A, B, C, D, T;
-    __m256i T0, T1, T2, T3, T4, T5, T6, T7;
-    __m256i BYTE_REVERSE_32;
-    int r;
-
-    _mm256_zeroupper();
-    BYTE_REVERSE_32 = _mm256_set_epi8( 12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3, 12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3 );
-
-    //
-    // The chaining state can be unaligned on x86, so we use unalgned loads
-    //
-
-    T0 = _mm256_loadu_si256( (__m256i *)&pChain[0]->H[0] );
-    T1 = _mm256_loadu_si256( (__m256i *)&pChain[1]->H[0] );
-    T2 = _mm256_loadu_si256( (__m256i *)&pChain[2]->H[0] );
-    T3 = _mm256_loadu_si256( (__m256i *)&pChain[3]->H[0] );
-    T4 = _mm256_loadu_si256( (__m256i *)&pChain[4]->H[0] );
-    T5 = _mm256_loadu_si256( (__m256i *)&pChain[5]->H[0] );
-    T6 = _mm256_loadu_si256( (__m256i *)&pChain[6]->H[0] );
-    T7 = _mm256_loadu_si256( (__m256i *)&pChain[7]->H[0] );
-
-    YMM_TRANSPOSE_32( ha[7], ha[6], ha[5], ha[4], ha[3], ha[2], ha[1], ha[0], T0, T1, T2, T3, T4, T5, T6, T7 );
-
-    buf[0] = ha[4];
-    buf[1] = ha[5];
-    buf[2] = ha[6];
-    buf[3] = ha[7];
-
-    while( nBytes >= 64 )
-    {
-
-        //
-        // Capture the input into W[0..15]
-        //
-        for( r=0; r<16; r += 8 )
-        {
-            T0 = _mm256_shuffle_epi8( _mm256_loadu_si256( (__m256i *) ppByte[0] ), BYTE_REVERSE_32 ); ppByte[0] += 32;
-            T1 = _mm256_shuffle_epi8( _mm256_loadu_si256( (__m256i *) ppByte[1] ), BYTE_REVERSE_32 ); ppByte[1] += 32;
-            T2 = _mm256_shuffle_epi8( _mm256_loadu_si256( (__m256i *) ppByte[2] ), BYTE_REVERSE_32 ); ppByte[2] += 32;
-            T3 = _mm256_shuffle_epi8( _mm256_loadu_si256( (__m256i *) ppByte[3] ), BYTE_REVERSE_32 ); ppByte[3] += 32;
-            T4 = _mm256_shuffle_epi8( _mm256_loadu_si256( (__m256i *) ppByte[4] ), BYTE_REVERSE_32 ); ppByte[4] += 32;
-            T5 = _mm256_shuffle_epi8( _mm256_loadu_si256( (__m256i *) ppByte[5] ), BYTE_REVERSE_32 ); ppByte[5] += 32;
-            T6 = _mm256_shuffle_epi8( _mm256_loadu_si256( (__m256i *) ppByte[6] ), BYTE_REVERSE_32 ); ppByte[6] += 32;
-            T7 = _mm256_shuffle_epi8( _mm256_loadu_si256( (__m256i *) ppByte[7] ), BYTE_REVERSE_32 ); ppByte[7] += 32;
-
-            YMM_TRANSPOSE_32( W[r], W[r+1], W[r+2], W[r+3], W[r+4], W[r+5], W[r+6], W[r+7], T0, T1, T2, T3, T4, T5, T6, T7 );
-        }
-
-        //
-        // Expand the message
-        //
-        A = W[15];
-        B = W[14];
-        D = W[0];
-        for( r=16; r<64; r+= 2 )
-        {
-            // Loop invariant: A=W[r-1], B = W[r-2], D = W[r-16]
-
-            //
-            // Macro for one word of message expansion.
-            // Invariant: 
-            // on entry: a = W[r-1], b = W[r-2], d = W[r-16]
-            // on exit:  W[r] computed, a = W[r-1], b = W[r], c = W[r-15]
-            //
-            #define EXPAND( a, b, c, d, r ) \
-                        c = W[r-15]; \
-                        b = _mm256_add_epi32( _mm256_add_epi32( _mm256_add_epi32( d, LSIGMA1YMM( b ) ), W[r-7] ), LSIGMA0YMM( c ) ); \
-                        W[r] = b; \
-
-            EXPAND( A, B, C, D, r );
-            EXPAND( B, A, D, C, (r+1));
-
-            #undef EXPAND
-        }
-
-        A = ha[7];
-        B = ha[6];
-        C = ha[5];
-        D = ha[4];
-
-        for( r=0; r<64; r += 4 )
-        {
-            //
-            // Loop invariant: 
-            // A, B, C, and D are the a,b,c,d values of the current state.
-            // W[r] is the next expanded message word to be processed.
-            // W[r-8 .. r-5] contain the current state words h, g, f, e. 
-            //
-
-            //
-            // Macro to compute one round
-            // 
-            #define DO_ROUND( a, b, c, d, t, r ) \
-                t = W[r]; \
-                t = _mm256_add_epi32( t, CSIGMA1YMM( W[r-5] ) ); \
-                t = _mm256_add_epi32( t, W[r-8] ); \
-                t = _mm256_add_epi32( t, CHYMM( W[r-5], W[r-6], W[r-7] ) ); \
-                t = _mm256_add_epi32( t, _mm256_set1_epi32( SymCryptSha256K[r] )); \
-                W[r-4] = _mm256_add_epi32( t, d ); \
-                d = _mm256_add_epi32( t, CSIGMA0YMM( a ) ); \
-                d = _mm256_add_epi32( d, MAJYMM( c, b, a ) );
-
-            DO_ROUND( A, B, C, D, T, r );
-            DO_ROUND( D, A, B, C, T, (r+1) );
-            DO_ROUND( C, D, A, B, T, (r+2) );
-            DO_ROUND( B, C, D, A, T, (r+3) );
-            #undef DO_ROUND
-        }
-
-        buf[3] = ha[7] = _mm256_add_epi32( buf[3], A );
-        buf[2] = ha[6] = _mm256_add_epi32( buf[2], B );
-        buf[1] = ha[5] = _mm256_add_epi32( buf[1], C );
-        buf[0] = ha[4] = _mm256_add_epi32( buf[0], D );
-        ha[3] = _mm256_add_epi32( ha[3], W[r-5] );
-        ha[2] = _mm256_add_epi32( ha[2], W[r-6] );
-        ha[1] = _mm256_add_epi32( ha[1], W[r-7] );
-        ha[0] = _mm256_add_epi32( ha[0], W[r-8] );
-
-        nBytes -= 64;
-    }
-
-    //
-    // Copy the chaining state back into the hash structure
-    //
-    YMM_TRANSPOSE_32( T0, T1, T2, T3, T4, T5, T6, T7, ha[7], ha[6], ha[5], ha[4], ha[3], ha[2], ha[1], ha[0] );
-    _mm256_storeu_si256( (__m256i *)&pChain[0]->H[0], T0 );
-    _mm256_storeu_si256( (__m256i *)&pChain[1]->H[0], T1 );
-    _mm256_storeu_si256( (__m256i *)&pChain[2]->H[0], T2 );
-    _mm256_storeu_si256( (__m256i *)&pChain[3]->H[0], T3 );
-    _mm256_storeu_si256( (__m256i *)&pChain[4]->H[0], T4 );
-    _mm256_storeu_si256( (__m256i *)&pChain[5]->H[0], T5 );
-    _mm256_storeu_si256( (__m256i *)&pChain[6]->H[0], T6 );
-    _mm256_storeu_si256( (__m256i *)&pChain[7]->H[0], T7 );
-
-    _mm256_zeroupper();
-
-}
-
-
-
 #endif // CPU_X86_X64
 
 #if  SYMCRYPT_CPU_ARM
@@ -1051,11 +806,11 @@ SymCryptParallelSha256AppendBlocks_ymm(
 
 VOID
 SYMCRYPT_CALL
-SymCryptParallelSha256AppendBlocks_neon( 
+SymCryptParallelSha256AppendBlocks_neon(
     _Inout_updates_( 4 )                                PSYMCRYPT_SHA256_CHAINING_STATE   * pChain,
     _Inout_updates_( 4 )                                PCBYTE                            * ppByte,
                                                         SIZE_T                              nBytes,
-    _Out_writes_( PAR_SCRATCH_ELEMENTS )                __n128                            * pScratch )
+    _Out_writes_( PAR_SCRATCH_ELEMENTS_256 )            __n128                            * pScratch )
 {
     //
     // Implementation that uses 4 lanes in the Neon registers
@@ -1070,48 +825,46 @@ SymCryptParallelSha256AppendBlocks_neon(
     //
     // This can probably be done faster, but we are missing the VTRN.64 instruction
     // which makes it hard to do this efficient in intrinsics.
-    // The vsetq_lane_u32 seems to be completely ignored by the compiler.
     //
-    ha[7].n128_u32[0] = pChain[0]->H[0];
-    ha[7].n128_u32[1] = pChain[1]->H[0];
-    ha[7].n128_u32[2] = pChain[2]->H[0];
-    ha[7].n128_u32[3] = pChain[3]->H[0];
+    ha[7] = vsetq_lane_u32( pChain[0]->H[0], ha[7], 0 );
+    ha[7] = vsetq_lane_u32( pChain[1]->H[0], ha[7], 1 );
+    ha[7] = vsetq_lane_u32( pChain[2]->H[0], ha[7], 2 );
+    ha[7] = vsetq_lane_u32( pChain[3]->H[0], ha[7], 3 );
 
-    ha[6].n128_u32[0] = pChain[0]->H[1];
-    ha[6].n128_u32[1] = pChain[1]->H[1];
-    ha[6].n128_u32[2] = pChain[2]->H[1];
-    ha[6].n128_u32[3] = pChain[3]->H[1];
+    ha[6] = vsetq_lane_u32( pChain[0]->H[1], ha[6], 0 );
+    ha[6] = vsetq_lane_u32( pChain[1]->H[1], ha[6], 1 );
+    ha[6] = vsetq_lane_u32( pChain[2]->H[1], ha[6], 2 );
+    ha[6] = vsetq_lane_u32( pChain[3]->H[1], ha[6], 3 );
 
-    ha[5].n128_u32[0] = pChain[0]->H[2];
-    ha[5].n128_u32[1] = pChain[1]->H[2];
-    ha[5].n128_u32[2] = pChain[2]->H[2];
-    ha[5].n128_u32[3] = pChain[3]->H[2];
+    ha[5] = vsetq_lane_u32( pChain[0]->H[2], ha[5], 0 );
+    ha[5] = vsetq_lane_u32( pChain[1]->H[2], ha[5], 1 );
+    ha[5] = vsetq_lane_u32( pChain[2]->H[2], ha[5], 2 );
+    ha[5] = vsetq_lane_u32( pChain[3]->H[2], ha[5], 3 );
 
-    ha[4].n128_u32[0] = pChain[0]->H[3];
-    ha[4].n128_u32[1] = pChain[1]->H[3];
-    ha[4].n128_u32[2] = pChain[2]->H[3];
-    ha[4].n128_u32[3] = pChain[3]->H[3];
+    ha[4] = vsetq_lane_u32( pChain[0]->H[3], ha[4], 0 );
+    ha[4] = vsetq_lane_u32( pChain[1]->H[3], ha[4], 1 );
+    ha[4] = vsetq_lane_u32( pChain[2]->H[3], ha[4], 2 );
+    ha[4] = vsetq_lane_u32( pChain[3]->H[3], ha[4], 3 );
 
-    ha[3].n128_u32[0] = pChain[0]->H[4];
-    ha[3].n128_u32[1] = pChain[1]->H[4];
-    ha[3].n128_u32[2] = pChain[2]->H[4];
-    ha[3].n128_u32[3] = pChain[3]->H[4];
+    ha[3] = vsetq_lane_u32( pChain[0]->H[4], ha[3], 0 );
+    ha[3] = vsetq_lane_u32( pChain[1]->H[4], ha[3], 1 );
+    ha[3] = vsetq_lane_u32( pChain[2]->H[4], ha[3], 2 );
+    ha[3] = vsetq_lane_u32( pChain[3]->H[4], ha[3], 3 );
 
-    ha[2].n128_u32[0] = pChain[0]->H[5];
-    ha[2].n128_u32[1] = pChain[1]->H[5];
-    ha[2].n128_u32[2] = pChain[2]->H[5];
-    ha[2].n128_u32[3] = pChain[3]->H[5];
+    ha[2] = vsetq_lane_u32( pChain[0]->H[5], ha[2], 0 );
+    ha[2] = vsetq_lane_u32( pChain[1]->H[5], ha[2], 1 );
+    ha[2] = vsetq_lane_u32( pChain[2]->H[5], ha[2], 2 );
+    ha[2] = vsetq_lane_u32( pChain[3]->H[5], ha[2], 3 );
 
-    ha[1].n128_u32[0] = pChain[0]->H[6];
-    ha[1].n128_u32[1] = pChain[1]->H[6];
-    ha[1].n128_u32[2] = pChain[2]->H[6];
-    ha[1].n128_u32[3] = pChain[3]->H[6];
+    ha[1] = vsetq_lane_u32( pChain[0]->H[6], ha[1], 0 );
+    ha[1] = vsetq_lane_u32( pChain[1]->H[6], ha[1], 1 );
+    ha[1] = vsetq_lane_u32( pChain[2]->H[6], ha[1], 2 );
+    ha[1] = vsetq_lane_u32( pChain[3]->H[6], ha[1], 3 );
 
-    ha[0].n128_u32[0] = pChain[0]->H[7];
-    ha[0].n128_u32[1] = pChain[1]->H[7];
-    ha[0].n128_u32[2] = pChain[2]->H[7];
-    ha[0].n128_u32[3] = pChain[3]->H[7];
-
+    ha[0] = vsetq_lane_u32( pChain[0]->H[7], ha[0], 0 );
+    ha[0] = vsetq_lane_u32( pChain[1]->H[7], ha[0], 1 );
+    ha[0] = vsetq_lane_u32( pChain[2]->H[7], ha[0], 2 );
+    ha[0] = vsetq_lane_u32( pChain[3]->H[7], ha[0], 3 );
 
     buf[0] = ha[4];
     buf[1] = ha[5];
@@ -1126,10 +879,10 @@ SymCryptParallelSha256AppendBlocks_neon(
         //
         for( r=0; r<16; r ++ )
         {
-            T0.n128_u32[0] = SYMCRYPT_LOAD_MSBFIRST32( ppByte[0] ); ppByte[0] += 4;
-            T0.n128_u32[1] = SYMCRYPT_LOAD_MSBFIRST32( ppByte[1] ); ppByte[1] += 4;
-            T0.n128_u32[2] = SYMCRYPT_LOAD_MSBFIRST32( ppByte[2] ); ppByte[2] += 4;
-            T0.n128_u32[3] = SYMCRYPT_LOAD_MSBFIRST32( ppByte[3] ); ppByte[3] += 4;
+            T0 = vsetq_lane_u32( SYMCRYPT_LOAD_MSBFIRST32( ppByte[0] ), T0, 0 ); ppByte[0] += 4;
+            T0 = vsetq_lane_u32( SYMCRYPT_LOAD_MSBFIRST32( ppByte[1] ), T0, 1 ); ppByte[1] += 4;
+            T0 = vsetq_lane_u32( SYMCRYPT_LOAD_MSBFIRST32( ppByte[2] ), T0, 2 ); ppByte[2] += 4;
+            T0 = vsetq_lane_u32( SYMCRYPT_LOAD_MSBFIRST32( ppByte[3] ), T0, 3 ); ppByte[3] += 4;
             W[r] = T0;
         }
 
@@ -1145,7 +898,7 @@ SymCryptParallelSha256AppendBlocks_neon(
 
             //
             // Macro for one word of message expansion.
-            // Invariant: 
+            // Invariant:
             // on entry: a = W[r-1], b = W[r-2], d = W[r-16]
             // on exit:  W[r] computed, a = W[r-1], b = W[r], c = W[r-15]
             //
@@ -1168,15 +921,15 @@ SymCryptParallelSha256AppendBlocks_neon(
         for( r=0; r<64; r += 4 )
         {
             //
-            // Loop invariant: 
+            // Loop invariant:
             // A, B, C, and D are the a,b,c,d values of the current state.
             // W[r] is the next expanded message word to be processed.
-            // W[r-8 .. r-5] contain the current state words h, g, f, e. 
+            // W[r-8 .. r-5] contain the current state words h, g, f, e.
             //
 
             //
             // Macro to compute one round
-            // 
+            //
             #define DO_ROUND( a, b, c, d, t, r ) \
                 t = W[r]; \
                 t = vaddq_u32( t, CSIGMA1( W[r-5] ) ); \
@@ -1209,46 +962,45 @@ SymCryptParallelSha256AppendBlocks_neon(
     //
     // Copy the chaining state back into the hash structure
     //
-   
-    pChain[0]->H[0] = ha[7].n128_u32[0];
-    pChain[1]->H[0] = ha[7].n128_u32[1];
-    pChain[2]->H[0] = ha[7].n128_u32[2];
-    pChain[3]->H[0] = ha[7].n128_u32[3];
+    pChain[0]->H[0] = vgetq_lane_u32( ha[7], 0 );
+    pChain[1]->H[0] = vgetq_lane_u32( ha[7], 1 );
+    pChain[2]->H[0] = vgetq_lane_u32( ha[7], 2 );
+    pChain[3]->H[0] = vgetq_lane_u32( ha[7], 3 );
 
-    pChain[0]->H[1] = ha[6].n128_u32[0];
-    pChain[1]->H[1] = ha[6].n128_u32[1];
-    pChain[2]->H[1] = ha[6].n128_u32[2];
-    pChain[3]->H[1] = ha[6].n128_u32[3];
+    pChain[0]->H[1] = vgetq_lane_u32( ha[6], 0 );
+    pChain[1]->H[1] = vgetq_lane_u32( ha[6], 1 );
+    pChain[2]->H[1] = vgetq_lane_u32( ha[6], 2 );
+    pChain[3]->H[1] = vgetq_lane_u32( ha[6], 3 );
 
-    pChain[0]->H[2] = ha[5].n128_u32[0];
-    pChain[1]->H[2] = ha[5].n128_u32[1];
-    pChain[2]->H[2] = ha[5].n128_u32[2];
-    pChain[3]->H[2] = ha[5].n128_u32[3];
+    pChain[0]->H[2] = vgetq_lane_u32( ha[5], 0 );
+    pChain[1]->H[2] = vgetq_lane_u32( ha[5], 1 );
+    pChain[2]->H[2] = vgetq_lane_u32( ha[5], 2 );
+    pChain[3]->H[2] = vgetq_lane_u32( ha[5], 3 );
 
-    pChain[0]->H[3] = ha[4].n128_u32[0];
-    pChain[1]->H[3] = ha[4].n128_u32[1];
-    pChain[2]->H[3] = ha[4].n128_u32[2];
-    pChain[3]->H[3] = ha[4].n128_u32[3];
+    pChain[0]->H[3] = vgetq_lane_u32( ha[4], 0 );
+    pChain[1]->H[3] = vgetq_lane_u32( ha[4], 1 );
+    pChain[2]->H[3] = vgetq_lane_u32( ha[4], 2 );
+    pChain[3]->H[3] = vgetq_lane_u32( ha[4], 3 );
 
-    pChain[0]->H[4] = ha[3].n128_u32[0];
-    pChain[1]->H[4] = ha[3].n128_u32[1];
-    pChain[2]->H[4] = ha[3].n128_u32[2];
-    pChain[3]->H[4] = ha[3].n128_u32[3];
+    pChain[0]->H[4] = vgetq_lane_u32( ha[3], 0 );
+    pChain[1]->H[4] = vgetq_lane_u32( ha[3], 1 );
+    pChain[2]->H[4] = vgetq_lane_u32( ha[3], 2 );
+    pChain[3]->H[4] = vgetq_lane_u32( ha[3], 3 );
 
-    pChain[0]->H[5] = ha[2].n128_u32[0];
-    pChain[1]->H[5] = ha[2].n128_u32[1];
-    pChain[2]->H[5] = ha[2].n128_u32[2];
-    pChain[3]->H[5] = ha[2].n128_u32[3];
+    pChain[0]->H[5] = vgetq_lane_u32( ha[2], 0 );
+    pChain[1]->H[5] = vgetq_lane_u32( ha[2], 1 );
+    pChain[2]->H[5] = vgetq_lane_u32( ha[2], 2 );
+    pChain[3]->H[5] = vgetq_lane_u32( ha[2], 3 );
 
-    pChain[0]->H[6] = ha[1].n128_u32[0];
-    pChain[1]->H[6] = ha[1].n128_u32[1];
-    pChain[2]->H[6] = ha[1].n128_u32[2];
-    pChain[3]->H[6] = ha[1].n128_u32[3];
+    pChain[0]->H[6] = vgetq_lane_u32( ha[1], 0 );
+    pChain[1]->H[6] = vgetq_lane_u32( ha[1], 1 );
+    pChain[2]->H[6] = vgetq_lane_u32( ha[1], 2 );
+    pChain[3]->H[6] = vgetq_lane_u32( ha[1], 3 );
 
-    pChain[0]->H[7] = ha[0].n128_u32[0];
-    pChain[1]->H[7] = ha[0].n128_u32[1];
-    pChain[2]->H[7] = ha[0].n128_u32[2];
-    pChain[3]->H[7] = ha[0].n128_u32[3];
+    pChain[0]->H[7] = vgetq_lane_u32( ha[0], 0 );
+    pChain[1]->H[7] = vgetq_lane_u32( ha[0], 1 );
+    pChain[2]->H[7] = vgetq_lane_u32( ha[0], 2 );
+    pChain[3]->H[7] = vgetq_lane_u32( ha[0], 3 );
 
     SymCryptWipeKnownSize( buf, sizeof( buf ) );
 }
@@ -1268,7 +1020,7 @@ SymCryptParallelSha256AppendBlocks_neon(
 
 VOID
 SYMCRYPT_CALL
-SymCryptParallelSha256AppendBytes_serial( 
+SymCryptParallelSha256AppendBytes_serial(
     _Inout_updates_( nPar )                 PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE * pWork,
     _In_range_(1, MAX_PARALLEL)             SIZE_T                                  nPar,
                                             SIZE_T                                  nBytes )
@@ -1291,11 +1043,11 @@ SymCryptParallelSha256AppendBytes_serial(
 
 VOID
 SYMCRYPT_CALL
-SymCryptParallelSha256Append( 
+SymCryptParallelSha256Append(
     _Inout_updates_( nPar )                 PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE * pWork,
     _In_range_(1, MAX_PARALLEL)             SIZE_T                                  nPar,
                                             SIZE_T                                  nBytes,
-    _Out_writes_to_( SYMCRYPT_SIMD_ELEMENT_SIZE * PAR_SCRATCH_ELEMENTS, 0 ) 
+    _Out_writes_to_( SYMCRYPT_SIMD_ELEMENT_SIZE * PAR_SCRATCH_ELEMENTS_256, 0 )
                                             PBYTE                                   pbSimdScratch,
                                             SIZE_T                                  cbSimdScratch )
 {
@@ -1304,8 +1056,8 @@ SymCryptParallelSha256Append(
     SIZE_T                          i;
     UINT32                          maxParallel;
 
-    UNREFERENCED_PARAMETER( cbSimdScratch );        // not referenced on FRE builds 
-    SYMCRYPT_ASSERT( cbSimdScratch >= PAR_SCRATCH_ELEMENTS * SYMCRYPT_SIMD_ELEMENT_SIZE );
+    UNREFERENCED_PARAMETER( cbSimdScratch );        // not referenced on FRE builds
+    SYMCRYPT_ASSERT( cbSimdScratch >= PAR_SCRATCH_ELEMENTS_256 * SYMCRYPT_SIMD_ELEMENT_SIZE );
     SYMCRYPT_ASSERT( ((UINT_PTR)pbSimdScratch & (SYMCRYPT_SIMD_ELEMENT_SIZE - 1)) == 0 );
 
     //
@@ -1361,7 +1113,7 @@ SymCryptParallelSha256Append(
 #if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
     if( maxParallel == 8 )
     {
-        SymCryptParallelSha256AppendBlocks_ymm(  &apChain[0], &apData[0], nBytes, (__m256i *)pbSimdScratch );
+        SymCryptParallelSha256AppendBlocks_ymm(  &apChain[0], &apData[0], nBytes, (PBYTE)((__m256i *)pbSimdScratch) );
     } else {
         SymCryptParallelSha256AppendBlocks_xmm(  &apChain[0], &apData[0], nBytes, (__m128i *)pbSimdScratch );
     }
@@ -1380,7 +1132,7 @@ cleanup:
 /*
 VOID
 SYMCRYPT_CALL
-SymCryptParallelSha256AppendBlocks( 
+SymCryptParallelSha256AppendBlocks(
     _Inout_updates_( nWork )    PSYMCRYPT_PARALLEL_SHA256_STATE *   pWork,
                                 SIZE_T                              nWork,
                                 SIZE_T                              nBytes )
@@ -1399,14 +1151,14 @@ SymCryptParallelSha256AppendBlocks(
 }
 
 */
-        
+
 #endif // SUPPORT_PARALLEL
 
 #if SUPPORT_PARALLEL
 
 const SYMCRYPT_PARALLEL_HASH SymCryptParallelSha256Algorithm_default = {
     &SymCryptSha256Algorithm_default,
-    PAR_SCRATCH_ELEMENTS * SYMCRYPT_SIMD_ELEMENT_SIZE,
+    PAR_SCRATCH_ELEMENTS_256 * SYMCRYPT_SIMD_ELEMENT_SIZE,
     &SymCryptParallelSha256Result1,
     &SymCryptParallelSha256Result2,
     &SymCryptParallelSha256ResultDone,
@@ -1422,7 +1174,7 @@ const SYMCRYPT_PARALLEL_HASH SymCryptParallelSha256Algorithm_default = {
 //
 const SYMCRYPT_PARALLEL_HASH SymCryptParallelSha256Algorithm_default = {
     &SymCryptSha256Algorithm_default,
-    PAR_SCRATCH_ELEMENTS * SYMCRYPT_SIMD_ELEMENT_SIZE,
+    PAR_SCRATCH_ELEMENTS_256 * SYMCRYPT_SIMD_ELEMENT_SIZE,
     NULL,
     NULL,
     NULL,
@@ -1434,12 +1186,13 @@ const SYMCRYPT_PARALLEL_HASH SymCryptParallelSha256Algorithm_default = {
 const PCSYMCRYPT_PARALLEL_HASH SymCryptParallelSha256Algorithm = &SymCryptParallelSha256Algorithm_default;
 
 
-#define N_SELFTEST_STATES   5      // Just enough to trigger YMM useage
+#define N_SELFTEST_STATES   5      // Just enough to trigger YMM usage
 
 VOID
 SYMCRYPT_CALL
-SymCryptParallelSha256Selftest()
+SymCryptParallelSha256Selftest(void)
 {
+    SYMCRYPT_ERROR                      scError;
     SYMCRYPT_SHA256_STATE               states[N_SELFTEST_STATES];
     BYTE                                result[N_SELFTEST_STATES][SYMCRYPT_SHA256_RESULT_SIZE];
     SYMCRYPT_PARALLEL_HASH_OPERATION    op[2*N_SELFTEST_STATES];
@@ -1460,7 +1213,11 @@ SymCryptParallelSha256Selftest()
         op[2*i + 1].cbBuffer = SYMCRYPT_SHA256_RESULT_SIZE;
     }
 
-    SymCryptParallelSha256Process( &states[0], N_SELFTEST_STATES, op, 2*N_SELFTEST_STATES, scratch, sizeof( scratch ) );
+    scError = SymCryptParallelSha256Process( &states[0], N_SELFTEST_STATES, op, 2*N_SELFTEST_STATES, scratch, sizeof( scratch ) );
+    if( scError != SYMCRYPT_NO_ERROR )
+    {
+        SymCryptFatal( 'PS25' );
+    }
 
     for( i=0; i<N_SELFTEST_STATES; i++ )
     {

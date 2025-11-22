@@ -10,12 +10,12 @@
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptDhSecretAgreement(
-    _In_    PCSYMCRYPT_DLKEY        pkPrivate,
-    _In_    PCSYMCRYPT_DLKEY        pkPublic,
-            SYMCRYPT_NUMBER_FORMAT  format,
-            UINT32                  flags,
-    _Out_   PBYTE                   pbAgreedSecret,
-            SIZE_T                  cbAgreedSecret )
+    _In_                            PCSYMCRYPT_DLKEY        pkPrivate,
+    _In_                            PCSYMCRYPT_DLKEY        pkPublic,
+                                    SYMCRYPT_NUMBER_FORMAT  format,
+                                    UINT32                  flags,
+    _Out_writes_( cbAgreedSecret )  PBYTE                   pbAgreedSecret,
+                                    SIZE_T                  cbAgreedSecret )
 {
     SYMCRYPT_ERROR scError = SYMCRYPT_NO_ERROR;
 
@@ -30,6 +30,14 @@ SymCryptDhSecretAgreement(
     UINT32 cbModelement = 0;
 
     UINT32 nBitsOfExp = 0;
+
+    // Make sure that the keys may be used in DH
+    if ( ((pkPrivate->fAlgorithmInfo & SYMCRYPT_FLAG_DLKEY_DH) == 0) ||
+         ((pkPublic->fAlgorithmInfo & SYMCRYPT_FLAG_DLKEY_DH) == 0) )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
 
     // Make sure we only specify the correct flags and that
     // there is a private key
@@ -60,7 +68,7 @@ SymCryptDhSecretAgreement(
     // Objects and scratch space size calculation
     cbModelement = SymCryptSizeofModElementFromModulus( pDlgroup->pmP );
     cbScratch = cbModelement +
-                max( SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( pDlgroup->nDigitsOfP ),
+                SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( pDlgroup->nDigitsOfP ),
                      SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pDlgroup->nDigitsOfP ));
 
     // Scratch space allocation
@@ -80,10 +88,10 @@ SymCryptDhSecretAgreement(
 
     SYMCRYPT_ASSERT( peRes != NULL);
 
-    // Fix the bits of the exponent (the private key might be either mod Q or mod P)
+    // Fix the bits of the exponent (the private key might be either mod Q, mod 2^nBitsPriv, or mod P)
     if (pkPrivate->fPrivateModQ)
     {
-        nBitsOfExp = pDlgroup->nBitsOfQ;
+        nBitsOfExp = pkPrivate->nBitsPriv;
     }
     else
     {

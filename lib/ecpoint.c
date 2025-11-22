@@ -8,7 +8,7 @@
 #include "precomp.h"
 
 // Table with the number of field elements for each point format
-const UINT32 SymCryptEcpointFormatNumberofElements[] = { 
+const UINT32 SymCryptEcpointFormatNumberofElements[] = {
     0,
     1,      // SYMCRYPT_ECPOINT_FORMAT_X
     2,      // SYMCRYPT_ECPOINT_FORMAT_XY
@@ -20,13 +20,19 @@ SymCryptSizeofEcpointEx(
     UINT32 cbModElement,
     UINT32 numOfCoordinates )
 {
-	if ( numOfCoordinates > SYMCRYPT_ECPOINT_FORMAT_MAX_LENGTH )
+    SYMCRYPT_ASSERT(numOfCoordinates > 0);
+    SYMCRYPT_ASSERT(numOfCoordinates <= SYMCRYPT_ECPOINT_FORMAT_MAX_LENGTH);
+
+    // Callers should never specify numOfCoordinates equal to 0 or greater than
+    // SYMCRYPT_ECPOINT_FORMAT_MAX_LENGTH
+    // Return 0 to indicate failure if a caller does specify invalid numOfCoordinates
+    if( (numOfCoordinates == 0) || (numOfCoordinates > SYMCRYPT_ECPOINT_FORMAT_MAX_LENGTH) )
     {
-        SymCryptFatal( 'ecp4' );
+        return 0;
     }
 
     // Since the maximum number of coordinates is 4 this result is bounded
-    // by 4*2^17 + ovehead ~ 2^20
+    // by 4*2^17 + overhead ~ 2^20
     return sizeof(SYMCRYPT_ECPOINT) + numOfCoordinates * cbModElement;
 }
 
@@ -42,13 +48,16 @@ PSYMCRYPT_ECPOINT
 SYMCRYPT_CALL
 SymCryptEcpointAllocate( _In_ PCSYMCRYPT_ECURVE pCurve )
 {
-    PVOID               p;
+    PVOID               p = NULL;
     SIZE_T              cb;
     PSYMCRYPT_ECPOINT   res = NULL;
 
     cb = SymCryptSizeofEcpointFromCurve( pCurve );
 
-    p = SymCryptCallbackAlloc( cb );
+    if ( cb != 0 )
+    {
+        p = SymCryptCallbackAlloc( cb );
+    }
 
     if ( p==NULL )
     {
@@ -83,18 +92,20 @@ SymCryptEcpointCreateEx(
     PSYMCRYPT_ECPOINT       poPoint = NULL;
 
     PSYMCRYPT_MODELEMENT    pmTmp = NULL;
-    UINT32                  cbModElement = 0;
+    UINT32                  cbModElement = pCurve->cbModElement;
 
-    UNREFERENCED_PARAMETER( cbBuffer );     // only referenced in an ASSERT...
+    PBYTE pbBufferEnd = pbBuffer + cbBuffer;
+    UNREFERENCED_PARAMETER( pbBufferEnd );     // only referenced in an ASSERT...
 
     SYMCRYPT_ASSERT( pCurve->FMod != 0 );
     SYMCRYPT_ASSERT( pCurve->cbModElement != 0 );
-	// dcl - this is not an expensive call, and could be checked in release, just one mul and one add
-    SYMCRYPT_ASSERT( cbBuffer >=  SymCryptSizeofEcpointEx( pCurve->cbModElement, numOfCoordinates ) );
+    SYMCRYPT_ASSERT( cbBuffer >= SymCryptSizeofEcpointEx( pCurve->cbModElement, numOfCoordinates ) );
+    if ( cbBuffer == 0 || numOfCoordinates == 0 )
+    {
+        goto cleanup;
+    }
 
     SYMCRYPT_ASSERT_ASYM_ALIGNED( pbBuffer );
-
-    cbModElement = pCurve->cbModElement;
 
     poPoint = (PSYMCRYPT_ECPOINT) pbBuffer;
 
@@ -103,17 +114,21 @@ SymCryptEcpointCreateEx(
     // Setting the point coordinates
     for (UINT32 i=0; i<numOfCoordinates; i++)
     {
+        SYMCRYPT_ASSERT( pbBuffer + cbModElement <= pbBufferEnd );
         pmTmp = SymCryptModElementCreate( pbBuffer, cbModElement, pCurve->FMod );
         if ( pmTmp == NULL )
         {
-            pmTmp = NULL;
+            poPoint = NULL;
             goto cleanup;
         }
         pbBuffer += cbModElement;
     }
 
     // Setting the normalized flag
-    poPoint->normalized = 0;
+    poPoint->normalized = FALSE;
+
+    // Setting the curve
+    poPoint->pCurve     = pCurve;
 
     // Setting the magic
     SYMCRYPT_SET_MAGIC( poPoint );
@@ -127,7 +142,7 @@ SYMCRYPT_CALL
 SymCryptEcpointCreate(
     _Out_writes_bytes_( cbBuffer )  PBYTE               pbBuffer,
                                     SIZE_T              cbBuffer,
-                                    PCSYMCRYPT_ECURVE   pCurve )
+    _In_                            PCSYMCRYPT_ECURVE   pCurve )
 {
 
     SYMCRYPT_ASSERT( pCurve->eCoordinates != 0 );
@@ -148,6 +163,8 @@ VOID
 SYMCRYPT_CALL
 SymCryptEcpointWipe( _In_ PCSYMCRYPT_ECURVE pCurve, _Out_ PSYMCRYPT_ECPOINT poDst )
 {
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poDst->pCurve) );
+
     // Wipe the whole structure in one go.
     SymCryptWipe( poDst, SymCryptSizeofEcpointFromCurve( pCurve ) );
 }
@@ -158,7 +175,15 @@ SymCryptEcpointCopy(
     _In_    PCSYMCRYPT_ECPOINT  poSrc,
     _Out_   PSYMCRYPT_ECPOINT   poDst )
 {
-    SymCryptEcpointMaskedCopy( pCurve, poSrc, poDst, 0xffffffff );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poSrc->pCurve) && SymCryptEcurveIsSame(pCurve, poDst->pCurve) );
+
+    if( poSrc != poDst )
+    {
+        // Unconditionally set the normalization state of destination to source
+        poDst->normalized = poSrc->normalized;
+
+        memcpy(poDst + 1, poSrc + 1, SYMCRYPT_INTERNAL_NUMOF_COORDINATES(pCurve->eCoordinates) * pCurve->FModDigits * SYMCRYPT_FDEF_DIGIT_SIZE);
+    }
 }
 
 VOID
@@ -168,14 +193,13 @@ SymCryptEcpointMaskedCopy(
     _Out_   PSYMCRYPT_ECPOINT   poDst,
             UINT32              mask )
 {
-	// dcl - hope you realize that this allows 0xffffffff and 0
-	// If that's actually what you wanted to accomplish, it would be easier to read
-	// if it were written as:
-	// SYMCRYPT_ASSERT( (mask == 0) || (mask == 0xffffffff) );
-    SYMCRYPT_ASSERT( (mask + 1) < 2 );
+    SYMCRYPT_ASSERT( (mask == 0) || (mask == 0xffffffff) );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poSrc->pCurve) && SymCryptEcurveIsSame(pCurve, poDst->pCurve) );
 
-    poDst->normalized = (poSrc->normalized & mask) | (poDst->normalized & ~mask);
-    
+    // Unconditionally combine the normalization state of source and destination to avoid potential for
+    // leak of mask. Normalized is a non-secret value and is permitted to be leaked by side-channels
+    poDst->normalized &= poSrc->normalized;
+
 	// dcl - this looks like the equivalent of memcpy
 	// should be proven that arguments cannot be the result of an integer overflow
     SymCryptFdefMaskedCopy((PCBYTE)poSrc + sizeof(SYMCRYPT_ECPOINT), (PBYTE)poDst + sizeof(SYMCRYPT_ECPOINT), SYMCRYPT_INTERNAL_NUMOF_COORDINATES(pCurve->eCoordinates) * pCurve->FModDigits, mask );
@@ -184,15 +208,14 @@ SymCryptEcpointMaskedCopy(
 //
 // SymCryptEcpointTransform: Internal function to transform an ECPOINT
 // from one coordinate representation to another. One point has the default
-// format of the curve. The other point has a format large enough for the external 
-// SYMCRYPT_ECPOINT_FORMAT. 
+// format of the curve. The other point has a format large enough for the external
+// SYMCRYPT_ECPOINT_FORMAT.
 //
 // When the boolean setValue is set to TRUE, the source point is the one with
-// the external format eformat, and the destination point has the default 
+// the external format eformat, and the destination point has the default
 // format of the curve. If setValue = FALSE the roles are reversed.
 // This function is only called by the Get / Set Value functions.
 //
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptEcpointTransform(
@@ -202,7 +225,7 @@ SymCryptEcpointTransform(
             SYMCRYPT_ECPOINT_FORMAT         eformat,
             BOOLEAN                         setValue,
             UINT32                          flags,
-    _Out_writes_bytes_( cbScratch ) 
+    _Out_writes_bytes_( cbScratch )
             PBYTE                           pbScratch,
             SIZE_T                          cbScratch )
 {
@@ -219,7 +242,8 @@ SymCryptEcpointTransform(
     PSYMCRYPT_MODELEMENT peT[2] = { 0 };    // Temporaries
 
     SYMCRYPT_ASSERT( (flags & ~SYMCRYPT_FLAG_DATA_PUBLIC) == 0 );
-    SYMCRYPT_ASSERT( cbScratch >= max(  SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->FModDigits ), 
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poSrc->pCurve) && SymCryptEcurveIsSame(pCurve, poDst->pCurve) );
+    SYMCRYPT_ASSERT( cbScratch >= SYMCRYPT_MAX(  SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->FModDigits ),
                                         SYMCRYPT_SCRATCH_BYTES_FOR_MODINV( pCurve->FModDigits )) +
                                   2 * pCurve->cbModElement );
 
@@ -249,11 +273,11 @@ SymCryptEcpointTransform(
     }
 
     // Take all the possible supported transformations:
-    //      - From SYMCRYPT_ECPOINT_COORDINATES_SINGLE to 
+    //      - From SYMCRYPT_ECPOINT_COORDINATES_SINGLE to
     //          * SYMCRYPT_ECPOINT_COORDINATES_SINGLE (identity transformation)
     //          * SYMCRYPT_ECPOINT_COORDINATES_AFFINE (** Set all zeros to the Y coordinate **)
     //          * SYMCRYPT_ECPOINT_COORDINATES_SINGLE_PROJECTIVE
-    //      - From SYMCRYPT_ECPOINT_COORDINATES_AFFINE to 
+    //      - From SYMCRYPT_ECPOINT_COORDINATES_AFFINE to
     //          * SYMCRYPT_ECPOINT_COORDINATES_SINGLE (** Ignore Y coordinate **)
     //          * SYMCRYPT_ECPOINT_COORDINATES_AFFINE (identity transformation)
     //          * SYMCRYPT_ECPOINT_COORDINATES_JACOBIAN
@@ -315,7 +339,7 @@ SymCryptEcpointTransform(
             SymCryptModElementSetValueUint32( 1, pCurve->FMod, peDst, pbScratch, cbScratch );
 
             // Setting the normalized flag
-            poDst->normalized = (UINT32)(-1);
+            poDst->normalized = TRUE;
         }
         else
         {
@@ -368,7 +392,7 @@ SymCryptEcpointTransform(
                 }
 
                 // Setting the normalized flag
-                poDst->normalized = (UINT32)(-1);
+                poDst->normalized = TRUE;
             }
             else if (coTo == SYMCRYPT_ECPOINT_COORDINATES_SINGLE_PROJECTIVE)
             {
@@ -379,7 +403,7 @@ SymCryptEcpointTransform(
                 SymCryptModElementSetValueUint32( 1, pCurve->FMod, peDst, pbScratch, cbScratch );
 
                 // Setting the normalized flag
-                poDst->normalized = (UINT32)(-1);
+                poDst->normalized = TRUE;
             }
         }
         else
@@ -416,8 +440,14 @@ SymCryptEcpointTransform(
             }
 
             // Calculation
-            SymCryptModInv( pCurve->FMod, peSrc, peT[0], flags, pbScratch, cbScratch );           // T0 := 1  / Z
-            SymCryptModMul( pCurve->FMod, peT[0], peT[0], peT[1], pbScratch, cbScratch );     // T1 := T0 * T0 = 1/Z^2
+            // T0 := 1  / Z
+            scError = SymCryptModInv( pCurve->FMod, peSrc, peT[0], flags, pbScratch, cbScratch );
+            if( scError != SYMCRYPT_NO_ERROR )
+            {
+                goto cleanup;
+            }
+
+            SymCryptModMul( pCurve->FMod, peT[0], peT[0], peT[1], pbScratch, cbScratch );           // T1 := T0 * T0 = 1/Z^2
 
             // Get the X coordinates
             peSrc = SYMCRYPT_INTERNAL_ECPOINT_COORDINATE( 0, pCurve, poSrc );
@@ -474,7 +504,11 @@ SymCryptEcpointTransform(
             }
 
             // peT[0] = 1 / Z
-            SymCryptModInv( pCurve->FMod, peSrc, peT[0], flags, pbScratch, cbScratch );
+            scError = SymCryptModInv( pCurve->FMod, peSrc, peT[0], flags, pbScratch, cbScratch );
+            if( scError != SYMCRYPT_NO_ERROR )
+            {
+                goto cleanup;
+            }
 
             // Get the X coordinates
             peSrc = SYMCRYPT_INTERNAL_ECPOINT_COORDINATE( 0, pCurve, poSrc );
@@ -529,7 +563,11 @@ SymCryptEcpointTransform(
             }
 
             // Calculation
-            SymCryptModInv( pCurve->FMod, peSrc, peT[0], flags, pbScratch, cbScratch );              // T0 := 1 / Y
+            scError = SymCryptModInv( pCurve->FMod, peSrc, peT[0], flags, pbScratch, cbScratch );              // T0 := 1 / Y
+            if( scError != SYMCRYPT_NO_ERROR )
+            {
+                goto cleanup;
+            }
 
             // Get the X coordinates
             peSrc = SYMCRYPT_INTERNAL_ECPOINT_COORDINATE( 0, pCurve, poSrc );
@@ -562,7 +600,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptEcpointSetValue(
@@ -601,7 +638,7 @@ SymCryptEcpointSetValue(
     cbSrc = cbSrc / SymCryptEcpointFormatNumberofElements[ eformat ];
 
     cbTemp = SymCryptSizeofIntFromDigits( publicKeyDigits );
-    SYMCRYPT_ASSERT( cbTemp < cbScratch );
+    SYMCRYPT_ASSERT( cbScratch > cbTemp );
 
     piTemp = SymCryptIntCreate( pbScratch, cbTemp, publicKeyDigits );
 
@@ -623,6 +660,7 @@ SymCryptEcpointSetValue(
 
     // Create the large point
     cbLarge = SymCryptSizeofEcpointEx( pCurve->cbModElement, SYMCRYPT_ECPOINT_FORMAT_MAX_LENGTH );
+    SYMCRYPT_ASSERT( cbScratch > cbLarge );
     poLarge = SymCryptEcpointCreateEx( pbScratch, cbLarge, pCurve, SYMCRYPT_ECPOINT_FORMAT_MAX_LENGTH );
     if ( poLarge == NULL )
     {
@@ -662,7 +700,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptEcpointGetValue(
@@ -680,6 +717,7 @@ SymCryptEcpointGetValue(
     PSYMCRYPT_MODELEMENT    peTmp = NULL;       // Temporary MODELEMENT handle
     PSYMCRYPT_ECPOINT       poLarge = NULL;     // ECPOINT with the largest format available
     UINT32                  cbLarge = 0;
+    SIZE_T                  cbDstElem;
 
     SYMCRYPT_ASSERT( (flags & ~SYMCRYPT_FLAG_DATA_PUBLIC) == 0 );
     SYMCRYPT_ASSERT( pCurve->FMod != 0 );
@@ -694,10 +732,12 @@ SymCryptEcpointGetValue(
         scError = SYMCRYPT_BUFFER_TOO_SMALL;
         goto cleanup;
     }
-    cbDst = cbDst / SymCryptEcpointFormatNumberofElements[ eformat ];
+    SYMCRYPT_ASSERT( SymCryptEcpointFormatNumberofElements[ eformat ] > 0 );
+    cbDstElem = cbDst / SymCryptEcpointFormatNumberofElements[ eformat ];
 
     // Create the big point
     cbLarge = SymCryptSizeofEcpointEx( pCurve->cbModElement, SYMCRYPT_ECPOINT_FORMAT_MAX_LENGTH );
+    SYMCRYPT_ASSERT( cbScratch > cbLarge );
     poLarge = SymCryptEcpointCreateEx( pbScratch, cbLarge, pCurve, SYMCRYPT_ECPOINT_FORMAT_MAX_LENGTH );
     if ( poLarge == NULL )
     {
@@ -715,6 +755,7 @@ SymCryptEcpointGetValue(
     // Getting the point coordinates into the destination buffer
     for (UINT32 i=0; i<SymCryptEcpointFormatNumberofElements[eformat]; i++)
     {
+        SYMCRYPT_ASSERT( cbDst >= cbDstElem );
         peTmp = (PSYMCRYPT_MODELEMENT)( (PBYTE)poLarge + SYMCRYPT_INTERNAL_ECPOINT_COORDINATE_OFFSET( pCurve, i ) );
         if ( peTmp == NULL )
         {
@@ -726,7 +767,7 @@ SymCryptEcpointGetValue(
                             pCurve->FMod,
                             peTmp,
                             pbDst,
-                            cbDst,
+                            cbDstElem,
                             nformat,
                             pbScratch + cbLarge,
                             cbScratch - cbLarge );
@@ -734,7 +775,8 @@ SymCryptEcpointGetValue(
         {
             goto cleanup;
         }
-        pbDst += cbDst;
+        pbDst += cbDstElem;
+        cbDst -= cbDstElem;
     }
 
 cleanup:

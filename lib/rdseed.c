@@ -6,8 +6,11 @@
 
 #include "precomp.h"
 
-#if (SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64)  && _MSC_VER >= 1610   // only available on x86 and amd64 architectures, and latest compiler.
-// *** note: the MSC_VER bound might be too small *** 
+#if (SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64) // only available on x86 and amd64 architectures.
+
+#if SYMCRYPT_MS_VC && _MSC_VER < 1610
+#error MSVC version lacks support for RDSEED intrinsics. Compile for the generic environment instead.
+#endif
 
 //
 // Create a definition that works on SIZE_Ts.
@@ -16,7 +19,7 @@
 #if SYMCRYPT_CPU_X86
 #define _rdseedxx_step(_p) _rdseed32_step( (unsigned int *) (_p) )
 #else
-#define _rdseedxx_step(_p) _rdseed64_step( (unsigned __int64  *) (_p) )
+#define _rdseedxx_step(_p) _rdseed64_step( (UINT64  *) (_p) )
 #endif
 
 FORCEINLINE
@@ -30,7 +33,7 @@ SymCryptRdseedSizet( SIZE_T * p )
     // There is no way to report errors, and customers rely on the RNG to work properly.
     // Therefore, higher layers will fatal if this function fails.
     // This is why we have a very high retry count; the alternative is to fatal.
-    // 
+    //
     //
 	for( i=0; i<10000000; i++ )
 	{
@@ -43,17 +46,16 @@ SymCryptRdseedSizet( SIZE_T * p )
 }
 
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptRdseedStatus()
+SymCryptRdseedStatus(void)
 {
     //
     // Check that the library is initialized; otherwise the CPUID info
     // is all zeroes. (This check only happens in CHKed builds.)
     //
     SymCryptCheckLibraryInitialized();
-    
+
     if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURE_RDSEED ) )
     {
         return SYMCRYPT_NO_ERROR;
@@ -65,11 +67,10 @@ SymCryptRdseedStatus()
 }
 
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptRdseedGetBytes( 
-    _Out_writes_( cbBuffer )                    PBYTE   pbResult,
+SymCryptRdseedGetBytes(
+    _Out_writes_( cbResult )                    PBYTE   pbResult,
                                                 SIZE_T  cbResult )
 {
     SIZE_T * pBuf;
@@ -80,7 +81,7 @@ SymCryptRdseedGetBytes(
     //
     // Take care of the obvious errors that can happen
     //
-    if( SymCryptRdseedStatus() != SYMCRYPT_NO_ERROR || 
+    if( SymCryptRdseedStatus() != SYMCRYPT_NO_ERROR ||
         (cbResult & 0xf) != 0
       )
     {
@@ -107,8 +108,8 @@ cleanup:
 
 VOID
 SYMCRYPT_CALL
-SymCryptRdseedGet( 
-    _Out_writes_( cbBuffer )                    PBYTE   pbResult,
+SymCryptRdseedGet(
+    _Out_writes_( cbResult )                    PBYTE   pbResult,
                                                 SIZE_T  cbResult )
 {
 	if( SymCryptRdseedGetBytes( pbResult, cbResult ) != SYMCRYPT_NO_ERROR )

@@ -7,7 +7,7 @@
 BCRYPT_ALG_HANDLE HashImpState<ImpXxx, AlgXxx>::hAlg;
 
 
-HashImp<ImpXxx, AlgXxx>::HashImp<ImpXxx, AlgXxx>()
+HashImp<ImpXxx, AlgXxx>::HashImp()
 {
     CHECK( CngOpenAlgorithmProviderFn( &state.hAlg, LSTRING( ALG_NAME ), NULL, bcoapReusableFlag() ) == STATUS_SUCCESS, 
         "Could not open CNG/" STRING( ALG_Name ) );
@@ -18,7 +18,7 @@ HashImp<ImpXxx, AlgXxx>::HashImp<ImpXxx, AlgXxx>()
 }
 
 template<>
-HashImp<ImpXxx, AlgXxx>::~HashImp<ImpXxx, AlgXxx>()
+HashImp<ImpXxx, AlgXxx>::~HashImp()
 {
     CHECK( state.hHash == 0, "Handle leak" );
     
@@ -70,7 +70,7 @@ VOID HashImp<ImpXxx, AlgXxx>::result( _Out_writes_( cbResult ) PBYTE pbResult, S
 {
     CHECK( NT_SUCCESS( CngFinishHashFn( state.hHash, pbResult, (ULONG) cbResult, 0 ) ),
         "Error finalizing CNG/" STRING( ALG_Name ) );
-    CHECK( NT_SUCCESS( CngDestroyHashFn( state.hHash ) ), "Error destoring CNG/" STRING( ALG_Name ) );
+    CHECK( NT_SUCCESS( CngDestroyHashFn( state.hHash ) ), "Error destroying CNG/" STRING( ALG_Name ) );
     state.hHash = 0;
 }
 
@@ -170,11 +170,11 @@ algImpDataPerfFunction<ImpXxx, AlgXxx>(PBYTE buf1, PBYTE buf2, PBYTE buf3, SIZE_
         status =  CngHashDataFn( h, buf2, (ULONG) dataSize, 0 );
         CHECK( NT_SUCCESS( status ), "?" );
         //CHECK5( NT_SUCCESS(CngHashDataFn  ( h, buf2, (ULONG) dataSize, 0 )), "h = %08x, buf1=%08x, status=%08x", h, buf1,status );
-        CHECK( NT_SUCCESS(CngFinishHashFn( h, buf3, (ULONG)(SYMCRYPT_XXX_RESULT_SIZE), 0 )), "" );
+        CHECK( NT_SUCCESS(CngFinishHashFn( h, buf3, (ULONG)(SCSHIM_XXX_RESULT_SIZE), 0 )), "" );
     } else {
         CHECK( NT_SUCCESS(CngCreateHashFn( HashImpState<ImpXxx, AlgXxx>::hAlg, &h, buf1 + 1600, PERF_BUFFER_SIZE - 1600, NULL, 0, 0 )), "" );
         CHECK( NT_SUCCESS(CngHashDataFn  ( h, buf2, (ULONG) dataSize, 0 )), "" );
-        CHECK( NT_SUCCESS(CngFinishHashFn( h, buf3, (ULONG)(SYMCRYPT_XXX_RESULT_SIZE), 0 )), "" );
+        CHECK( NT_SUCCESS(CngFinishHashFn( h, buf3, (ULONG)(SCSHIM_XXX_RESULT_SIZE), 0 )), "" );
         CHECK( NT_SUCCESS(CngDestroyHashFn( h )), "" );
     }
 }

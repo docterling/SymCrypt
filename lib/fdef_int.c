@@ -11,7 +11,7 @@
 // INT objects are stored in two parts:
 //  a SYMCRYPT_FDEF_INT structure
 //  an array of UINT32; the # elements in the array is a multiple of SYMCRYPT_FDEF_DIGIT_SIZE/4.
-//  
+//
 // The pointer passed points to the start of the UINT32 array, just after the SYMCRYPT_FDEF_INT structure.
 //
 // The generic implementation accesses the digits as an array of UINT32, but on 64-bit CPUs
@@ -102,9 +102,9 @@ SymCryptFdefIntAddSameSize(
 {
     SYMCRYPT_ASSERT( piSrc1->nDigits == piSrc2->nDigits && piSrc2->nDigits == piDst->nDigits );
 
-    return SymCryptFdefRawAdd(  SYMCRYPT_FDEF_INT_PUINT32( piSrc1 ), 
-                                SYMCRYPT_FDEF_INT_PUINT32( piSrc2 ), 
-                                SYMCRYPT_FDEF_INT_PUINT32( piDst ), 
+    return SymCryptFdefRawAdd(  SYMCRYPT_FDEF_INT_PUINT32( piSrc1 ),
+                                SYMCRYPT_FDEF_INT_PUINT32( piSrc2 ),
+                                SYMCRYPT_FDEF_INT_PUINT32( piDst ),
                                 piDst->nDigits );
 }
 
@@ -127,7 +127,7 @@ SymCryptFdefIntAddMixedSize(
     {
         c = SymCryptFdefRawAdd( SYMCRYPT_FDEF_INT_PUINT32( piSrc1 ), SYMCRYPT_FDEF_INT_PUINT32( piSrc2 ), SYMCRYPT_FDEF_INT_PUINT32( piDst ), nS1 );
         c = SymCryptFdefRawAddUint32( &SYMCRYPT_FDEF_INT_PUINT32( piSrc2 )[nS1 * SYMCRYPT_FDEF_DIGIT_NUINT32], c, &SYMCRYPT_FDEF_INT_PUINT32( piDst )[nS1 * SYMCRYPT_FDEF_DIGIT_NUINT32], nS2 - nS1 );
-        nW = nS2; 
+        nW = nS2;
     } else {
         // nS2 < nS1
         c = SymCryptFdefRawAdd( SYMCRYPT_FDEF_INT_PUINT32( piSrc1 ), SYMCRYPT_FDEF_INT_PUINT32( piSrc2 ), SYMCRYPT_FDEF_INT_PUINT32( piDst ), nS2 );
@@ -304,7 +304,7 @@ SymCryptFdefRawIsLessThanC(
     UINT64 t;
     UINT32 c;
 
-    // WE just do a subtraction wihtout writing and return the carry
+    // We just do a subtraction without writing and return the carry
     c = 0;
     for( i=0; i<nDigits * SYMCRYPT_FDEF_DIGIT_NUINT32; i++ )
     {
@@ -340,7 +340,6 @@ SymCryptFdefRawIsZeroC(
     UINT32 i;
     UINT32 c;
 
-    // WE just do a subtraction wihtout writing and return the carry
     c = 0;
     for( i=0; i<nDigits * SYMCRYPT_FDEF_DIGIT_NUINT32; i++ )
     {
@@ -445,6 +444,26 @@ cleanup:
     ;
 }
 
+// In shift-based operations which we have no assembly for, and we'd like to use 32-bit words
+// on 32-bit architectures and 64-bit words on 64-bit architectures. So we use NATIVE_UINT &
+// friends.
+
+// Note that accessing the FDEF uint32 array as an array of NATIVE_UINTs relies on
+// the little-endianness of the target if NATIVE_UINT is larger than 32 bits.
+// AMD64 is little endian and ARM64 code is always expected to execute in little
+// endian mode, but this is not true in general for an arbitrary 64 bit platform.
+//
+// If we need to support a 64 bit big endian platform, we need to either
+// restrict its NATIVE_UINT to 32 bits, or introduce load and store macros.
+#define SYMCRYPT_FDEF_INT_PNATIVE_UINT(p) ((NATIVE_UINT*) SYMCRYPT_FDEF_INT_PUINT32( p ))
+// Ensure that sizeof(NATIVE_UINT) > 4 only when compiling for known little endian target
+C_ASSERT( (NATIVE_BYTES <= 4) || SYMCRYPT_CPU_AMD64 || SYMCRYPT_CPU_ARM64 );
+
+#define SYMCRYPT_FDEF_DIGIT_NNATIVE_UINT  ((NATIVE_UINT)(SYMCRYPT_FDEF_DIGIT_SIZE / NATIVE_BYTES))
+
+// Ensure that digit is divisible by native word size!
+C_ASSERT(SYMCRYPT_FDEF_DIGIT_NNATIVE_UINT * NATIVE_BYTES == SYMCRYPT_FDEF_DIGIT_SIZE);
+
 VOID
 SYMCRYPT_CALL
 SymCryptFdefIntDivPow2(
@@ -452,39 +471,39 @@ SymCryptFdefIntDivPow2(
             SIZE_T          exp,
     _Out_   PSYMCRYPT_INT   piDst )
 {
-    SIZE_T  shiftWords = exp / (8 * sizeof( UINT32 ) );
-    SIZE_T  shiftBits  = exp % (8 * sizeof( UINT32 ) );
+    SIZE_T  shiftWords = exp / NATIVE_BITS;
+    SIZE_T  shiftRightBits  = exp % NATIVE_BITS;
+    SIZE_T  shiftLeftBits   = (NATIVE_BITS-1) - shiftRightBits;
+    NATIVE_UINT lowWord, highWord, highPart;
+    SIZE_T i = 0;
 
-    UINT32  nWords = piDst->nDigits * SYMCRYPT_FDEF_DIGIT_NUINT32;
+    NATIVE_UINT nWords = piDst->nDigits * SYMCRYPT_FDEF_DIGIT_NNATIVE_UINT;
 
     SYMCRYPT_ASSERT( piSrc->nDigits == piDst->nDigits );
 
-    if( shiftWords >= nWords )
+    shiftWords = SYMCRYPT_MIN(shiftWords, nWords);
+    if( shiftWords < nWords )
     {
-        SymCryptWipe( SYMCRYPT_FDEF_INT_PUINT32( piDst ), nWords * sizeof( UINT32 ) );
-        goto cleanup;
-    }
-
-    SIZE_T i = 0;
-    while( i < nWords - shiftWords )
-    {
-        UINT64 t = SYMCRYPT_FDEF_INT_PUINT32( piSrc )[i + shiftWords ];
-        if( i  + shiftWords + 1 < nWords )
+        lowWord = SYMCRYPT_FDEF_INT_PNATIVE_UINT(piSrc)[shiftWords];
+        while( i+shiftWords+1 < nWords )
         {
-            t |= (UINT64)SYMCRYPT_FDEF_INT_PUINT32( piSrc )[i + shiftWords + 1] << 32;
+            highWord = SYMCRYPT_FDEF_INT_PNATIVE_UINT(piSrc)[i+shiftWords+1];
+
+            // We always shift highWord left by 1 to keep variable shiftLeftBits in range [0,NATIVE_BITS-1]
+            highPart = (highWord << shiftLeftBits)<<1;
+
+            SYMCRYPT_FDEF_INT_PNATIVE_UINT(piDst)[i] = (lowWord >> shiftRightBits) | highPart;
+
+            lowWord = highWord;
+            i++;
         }
-        SYMCRYPT_FDEF_INT_PUINT32( piDst )[i] = (UINT32)(t >> shiftBits);
+        SYMCRYPT_FDEF_INT_PNATIVE_UINT(piDst)[i] = (lowWord >> shiftRightBits);
         i++;
     }
 
-    while( i < nWords )
-    {
-        SYMCRYPT_FDEF_INT_PUINT32( piDst )[i] = 0;
-        i++;
-    }
+    SYMCRYPT_ASSERT(i + shiftWords == nWords);
 
-cleanup:
-    ;
+    SymCryptWipe( &SYMCRYPT_FDEF_INT_PNATIVE_UINT( piDst )[nWords-shiftWords], shiftWords * NATIVE_BYTES );
 }
 
 VOID
@@ -494,29 +513,25 @@ SymCryptFdefIntShr1(
     _In_    PCSYMCRYPT_INT  piSrc,
     _Out_   PSYMCRYPT_INT   piDst )
 {
-    UINT32  nWords = piDst->nDigits * SYMCRYPT_FDEF_DIGIT_NUINT32;
-
-    UINT32  t;
+    UINT32  nWords = piDst->nDigits * SYMCRYPT_FDEF_DIGIT_NNATIVE_UINT;
 
     SYMCRYPT_ASSERT( piSrc->nDigits == piDst->nDigits );
     SYMCRYPT_ASSERT( highestBit < 2 );
 
     SIZE_T i = 0;
-    while( i < nWords )
+    NATIVE_UINT lowWord = SYMCRYPT_FDEF_INT_PNATIVE_UINT(piSrc)[0];
+    NATIVE_UINT highWord = 0;
+    while( i+1 < nWords )
     {
-        t = SYMCRYPT_FDEF_INT_PUINT32( piSrc )[i] >> 1;
-        if( i + 1 < nWords )
-        {
-            t |= (SYMCRYPT_FDEF_INT_PUINT32( piSrc )[i + 1] << 31);
-        }
-        else
-        {
-            t |= (highestBit << 31);
-        }
-        SYMCRYPT_FDEF_INT_PUINT32( piDst )[i] = t;
+        highWord = SYMCRYPT_FDEF_INT_PNATIVE_UINT(piSrc)[i+1];
+
+        SYMCRYPT_FDEF_INT_PNATIVE_UINT(piDst)[i] = (lowWord >> 1) | (highWord << (NATIVE_BITS - 1));
+
+        lowWord = highWord;
         i++;
     }
-
+    
+    SYMCRYPT_FDEF_INT_PNATIVE_UINT(piDst)[i] = (lowWord >> 1) | ((NATIVE_UINT)highestBit) << (NATIVE_BITS - 1);
 }
 
 VOID
@@ -533,7 +548,10 @@ SymCryptFdefIntModPow2(
 
     SYMCRYPT_ASSERT( piSrc->nDigits == piDst->nDigits );
 
-    memcpy( SYMCRYPT_FDEF_INT_PUINT32( piDst ), SYMCRYPT_FDEF_INT_PUINT32( piSrc ), nWords * sizeof( UINT32 ) );
+    if( piSrc != piDst )
+    {
+        memcpy( SYMCRYPT_FDEF_INT_PUINT32( piDst ), SYMCRYPT_FDEF_INT_PUINT32( piSrc ), nWords * sizeof( UINT32 ) );
+    }
 
     if( expWords >= nWords )
     {
@@ -720,11 +738,11 @@ SymCryptFdefIntSquare(
 VOID
 SYMCRYPT_CALL
 SymCryptFdefRawMulC(
-    _In_reads_(nWords1)             PCUINT32    pSrc1,
-                                    UINT32      nDigits1,
-    _In_reads_(nWords2)             PCUINT32    pSrc2,
-                                    UINT32      nDigits2,
-    _Out_writes_(nWords1 + nWords2) PUINT32     pDst )
+    _In_reads_(nDigits1 * SYMCRYPT_FDEF_DIGIT_NUINT32)              PCUINT32    pSrc1,
+                                                                    UINT32      nDigits1,
+    _In_reads_(nDigits2 * SYMCRYPT_FDEF_DIGIT_NUINT32)              PCUINT32    pSrc2,
+                                                                    UINT32      nDigits2,
+    _Out_writes_((nDigits1+nDigits2)*SYMCRYPT_FDEF_DIGIT_NUINT32)   PUINT32     pDst )
 {
     UINT32 nWords1 = nDigits1 * SYMCRYPT_FDEF_DIGIT_NUINT32;
     UINT32 nWords2 = nDigits2 * SYMCRYPT_FDEF_DIGIT_NUINT32;
@@ -776,9 +794,9 @@ SymCryptFdefRawMul(
 VOID
 SYMCRYPT_CALL
 SymCryptFdefRawSquareC(
-    _In_reads_(nWords)              PCUINT32    pSrc,
-                                    UINT32      nDigits,
-    _Out_writes_(2*nWords)          PUINT32     pDst )
+    _In_reads_(nDigits * SYMCRYPT_FDEF_DIGIT_NUINT32)   PCUINT32    pSrc,
+                                                        UINT32      nDigits,
+    _Out_writes_(2*nDigits*SYMCRYPT_FDEF_DIGIT_NUINT32) PUINT32     pDst )
 {
     UINT32 nWords = nDigits * SYMCRYPT_FDEF_DIGIT_NUINT32;
 
@@ -848,9 +866,9 @@ SYMCRYPT_CALL
 SymCryptFdefRawSquare(
     _In_reads_(nDigits*SYMCRYPT_FDEF_DIGIT_NUINT32)         PCUINT32    pSrc,
                                                             UINT32      nDigits,
-    _Out_writes_(2*nDigits1*SYMCRYPT_FDEF_DIGIT_NUINT32)    PUINT32     pDst )
+    _Out_writes_(2*nDigits*SYMCRYPT_FDEF_DIGIT_NUINT32)     PUINT32     pDst )
 {
-#if SYMCRYPT_CPU_AMD64 
+#if SYMCRYPT_CPU_AMD64
     if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURES_FOR_MULX ) )
     {
         SymCryptFdefRawSquareMulx( pSrc, nDigits, pDst );
@@ -909,7 +927,7 @@ SymCryptFdefIntToDivisor(
     _Out_writes_bytes_( cbScratch ) PBYTE               pbScratch,
                                     SIZE_T              cbScratch )
 {
-    ULONG32     W;
+    UINT32      W;
     UINT32      nBits;
     UINT32      nWords;
     UINT32      bitToTest;
@@ -935,7 +953,7 @@ SymCryptFdefIntToDivisor(
     // the value W is defined as
     //     floor( (2^{N+D} - 1) / M } - 2^D
     // which is the largest W such that (W * M + 2^D * M )< 2^{N+D}
-    // To compute W we use a binary search. 
+    // To compute W we use a binary search.
     // This can be optimized, but this is the simplest side-channel safe solution.
     // We can compute the upper bits of W * M + 2^D * M in a simple loop.
     //
@@ -943,10 +961,16 @@ SymCryptFdefIntToDivisor(
     //
 
     nBits = SymCryptIntBitsizeOfValue( &pdDst->Int );
+
+    SYMCRYPT_ASSERT( nBits != 0 );
     if( nBits == 0 )
     {
         // Can't create a divisor from a Int whose value is 0
-        SymCryptFatal( 'div0' );
+
+        // We really should not have any callers which get here (it is a requirement that Src != 0)
+        // We assert in CHKed builds
+        // In release set the divisor to 1 instead
+        SymCryptIntSetValueUint32( 1, &pdDst->Int );
     }
 
     pdDst->nBits = nBits;
@@ -982,15 +1006,15 @@ SymCryptFdefIntToDivisor(
 UINT32
 SYMCRYPT_CALL
 SymCryptFdefRawMultSubUint32(
-    _Inout_updates_( nUInt32 + 1 )  PUINT32     pAcc,
-    _In_reads_(nUInt32)             PCUINT32    pSrc1,
+    _Inout_updates_( nUint32 + 1 )  PUINT32     pAcc,
+    _In_reads_( nUint32 )           PCUINT32    pSrc1,
                                     UINT32      Src2,
                                     UINT32      nUint32 )
 {
     //
     // pAcc -= pSrc1 * Src2
     // BEWARE: this is only used by the DivMod routine, and works in Words rather than Digits
-    // making optimizations hard. 
+    // making optimizations hard.
     //
 
     UINT32 i;
@@ -1081,7 +1105,7 @@ VOID
 SYMCRYPT_CALL
 SymCryptFdefRawDivMod(
     _In_reads_(nDigits * SYMCRYPT_FDEF_DIGIT_NUINT32)           PCUINT32                pNum,
-                                                                UINT32                  nDigits, 
+                                                                UINT32                  nDigits,
     _In_                                                        PCSYMCRYPT_DIVISOR      pdDivisor,
     _Out_writes_opt_(nDigits * SYMCRYPT_FDEF_DIGIT_NUINT32)     PUINT32                 pQuotient,
     _Out_writes_opt_(SYMCRYPT_OBJ_NUINT32(pdDivisor))           PUINT32                 pRemainder,
@@ -1122,6 +1146,7 @@ SymCryptFdefRawDivMod(
 
         if( pRemainder != NULL )
         {
+            SYMCRYPT_ASSERT( remainderWords >= nWords );
             memcpy( pRemainder, pNum, nWords * sizeof( UINT32 ) );
             SymCryptWipe( &pRemainder[nWords], (remainderWords - nWords) * sizeof( UINT32 ) );        // clear the rest of the remainder words
         }
@@ -1158,7 +1183,7 @@ SymCryptFdefRawDivMod(
         nQ--;
         X0 = ( ((UINT64) pTmp[nQ + activeDivWords + 2] << 32) + pTmp[nQ + activeDivWords + 1] ) >> (32 - shift);
         X1 = ( ((UINT64) pTmp[nQ + activeDivWords + 1] << 32) + pTmp[nQ + activeDivWords + 0] ) >> (32 - shift);
-        
+
         W = (UINT32) pdDivisor->td.fdef.W;
         T = SYMCRYPT_MUL32x32TO64( W, X0 ) + (((UINT64)X0) << 32) + X1 + ((W>>1) & ((UINT32)0 - (X1 >> 31)));
         Qest = (UINT32)(T >> 32);

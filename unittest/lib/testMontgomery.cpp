@@ -1,7 +1,7 @@
 //
 // Test Montgomery Curve
 //
-// Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
+// Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
 #include "precomp.h"
@@ -25,7 +25,7 @@ static BYTE public_key_1_xy[64] = {     // *** LSB first
  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-static BYTE private_key_2[32] = {    // *** MSB first 
+static BYTE private_key_2[32] = {    // *** MSB first
  0x6B, 0xE0, 0x88, 0xFF, 0x27, 0x8B, 0x2F, 0x1C, 0xFD, 0xB6, 0x18, 0x26, 0x29, 0xB1, 0x3B, 0x6F,
  0xE6, 0x0E, 0x80, 0x83, 0x8B, 0x7F, 0xE1, 0x79, 0x4B, 0x8A, 0x4A, 0x62, 0x7E, 0x08, 0xAB, 0x58
 };
@@ -58,7 +58,7 @@ testSymCryptMontgomeryPointScalarMul(
     _In_    PSYMCRYPT_ECPOINT   poDst,
     _In_    PBYTE               pbResult,
     _In_    UINT32              cbResult,
-    _In_    PBYTE               pbScratch, 
+    _In_    PBYTE               pbScratch,
     _In_    SIZE_T              cbScratch)
 {
     SYMCRYPT_ERROR  scError = SYMCRYPT_NO_ERROR;
@@ -72,7 +72,7 @@ testSymCryptMontgomeryPointScalarMul(
                   poDst,
                   pbScratch,
                   cbScratch);
-   
+
     CHECK( scError == SYMCRYPT_NO_ERROR, "SymCryptMontgomeryPointScalarMul failed.\n");
 
     scError = SymCryptEcpointGetValue(
@@ -92,7 +92,7 @@ testSymCryptMontgomeryPointScalarMul(
 }
 
 VOID
-testMontgomery(PSYMCRYPT_ECURVE  pCurve)
+testMontgomery(PSYMCRYPT_ECURVE pCurve)
 {
     SYMCRYPT_ERROR scError = SYMCRYPT_NO_ERROR;
 
@@ -101,6 +101,11 @@ testMontgomery(PSYMCRYPT_ECURVE  pCurve)
     UINT32  msbValue = 0;
     UINT32  msbMask = 0;
     UINT32  msbActual = 0;
+    PBYTE   pbAgreedSecret1 = NULL;
+    PBYTE   pbAgreedSecret2 = NULL;
+    SIZE_T  cbAgreedSecret = SymCryptEcurveSizeofFieldElement( pCurve );
+    PBYTE   pbScratch = NULL;
+    SIZE_T  cbScratch = SYMCRYPT_SCRATCH_BYTES_FOR_SCALAR_ECURVE_OPERATIONS(pCurve);
 
     vprint( g_verbose, "    ..................................................................................................\n");
     vprint( g_verbose, "    %-41s","Operation");
@@ -108,19 +113,25 @@ testMontgomery(PSYMCRYPT_ECURVE  pCurve)
     vprint( g_verbose, "Result\n");
     vprint( g_verbose, "    ..................................................................................................\n");
 
-    SIZE_T cbScratch = SYMCRYPT_SCRATCH_BYTES_FOR_SCALAR_ECURVE_OPERATIONS(pCurve);
-  
-    PBYTE  pbScratch = (PBYTE)SymCryptCallbackAlloc(cbScratch);
-    if (pbScratch == NULL)
+    SIZE_T cbWorkspace = 2*cbAgreedSecret + cbScratch;
+
+    PBYTE pbWorkspace = (PBYTE)SymCryptCallbackAlloc(cbWorkspace);
+    if (pbWorkspace == NULL)
     {
         vprint( g_verbose, " Memory allocation failed in Test.");
         return;
     }
 
+    pbAgreedSecret1 = pbWorkspace;
+    pbAgreedSecret2 = pbWorkspace + cbAgreedSecret;
+    pbScratch       = pbWorkspace + 2*cbAgreedSecret;
+
     PSYMCRYPT_INT       piScalar = SymCryptIntAllocate(SymCryptEcurveDigitsofScalarMultiplier(pCurve));
     PSYMCRYPT_ECPOINT   poSrc = SymCryptEcpointAllocate(pCurve);
     PSYMCRYPT_ECPOINT   poDst = SymCryptEcpointAllocate(pCurve);
+    PSYMCRYPT_ECPOINT   poDst2 = SymCryptEcpointAllocate(pCurve);
     PSYMCRYPT_ECKEY     pkKey1 = SymCryptEckeyAllocate(pCurve);
+    PSYMCRYPT_ECKEY     pkKey2 = SymCryptEckeyAllocate(pCurve);
 
     vprint( g_verbose, "    %-41s", "G_x * private_key_1");
     vprint( g_verbose, " %-40s", "SymCryptEcpointScalarMul");
@@ -144,7 +155,7 @@ testMontgomery(PSYMCRYPT_ECURVE  pCurve)
     testSymCryptMontgomeryPointScalarMul(
         pCurve,
         piScalar,
-        poSrc,
+        NULL, // test that NULL source point is converted to G
         0,
         poDst,
         public_key_2,
@@ -195,11 +206,18 @@ testMontgomery(PSYMCRYPT_ECURVE  pCurve)
         piScalar,
         poSrc,
         0,
-        poDst,
+        poDst2,
         shared_secret,
         32,
         pbScratch,
         cbScratch);
+
+    vprint( g_verbose, "    %-41s", "public_key_1 * private_key2 == public_key_2 * private_key1");
+    vprint( g_verbose, " %-40s", "SymCryptEcpointIsEqual");
+
+    CHECK( SymCryptEcpointIsEqual(pCurve, poDst, poDst, 0, pbScratch, cbScratch ), "poDst != poDst" );
+    CHECK( SymCryptEcpointIsEqual(pCurve, poDst, poDst2, 0, pbScratch, cbScratch ), "poDst != poDst2");
+    CHECK( !SymCryptEcpointIsEqual(pCurve, poSrc, poDst, 0, pbScratch, cbScratch ), "poSrc == poDst");
 
     // =================================
     // Check that the high bit restriction is obeyed
@@ -218,7 +236,7 @@ testMontgomery(PSYMCRYPT_ECURVE  pCurve)
 
     do
     {
-        scError = SymCryptEckeySetRandom( 0, pkKey1 );
+        scError = SymCryptEckeySetRandom( SYMCRYPT_FLAG_ECKEY_ECDH, pkKey1 );
         CHECK( scError == SYMCRYPT_NO_ERROR, "Set random key failed" );
 
         scError = SymCryptEcpointScalarMul( pCurve, pkKey1->piPrivateKey, NULL, 0, poSrc, pbScratch, cbScratch );
@@ -241,9 +259,55 @@ testMontgomery(PSYMCRYPT_ECURVE  pCurve)
         CHECK5( (msbActual & msbMask) == msbValue,
         "High bit restriction failed. \n  Recvd: 0x%04X\n  Mask : 0x%04X\n  Bits : 0x%04X", msbActual, msbMask, msbValue);
 
+        // Check roundtrip through EckeyGetValue and EckeySetValue preserves private key without error
+        scError = SymCryptEckeySetValue(
+                            pbScratch,
+                            SymCryptEckeySizeofPrivateKey( pkKey1 ),
+                            NULL,
+                            0,
+                            SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
+                            SYMCRYPT_ECPOINT_FORMAT_XY,
+                            SYMCRYPT_FLAG_ECKEY_ECDSA | SYMCRYPT_FLAG_ECKEY_ECDH,
+                            pkKey2 );
+        CHECK( scError == SYMCRYPT_NO_ERROR, "SymCryptEckeySetValue private key failed" );
+
+        CHECK( SymCryptIntIsEqual(pkKey1->piPrivateKey, pkKey2->piPrivateKey), " pkKey1->piPrivateKey != pkKey2->piPrivateKey " );
+        CHECK( SymCryptEcpointIsEqual(pCurve, pkKey1->poPublicKey, pkKey2->poPublicKey, 0, pbScratch, cbScratch), " pkKey1->poPublicKey != pkKey2->poPublicKey " );
+
         msbCounter--;
     } while ((msbCounter > 0) && (msbNumOfBits>0));
 
+    vprint( g_verbose, "Success\n");
+    // =================================
+
+    scError = SymCryptEckeySetRandom( SYMCRYPT_FLAG_ECKEY_ECDH, pkKey2 );
+    CHECK( scError == SYMCRYPT_NO_ERROR, "Set random key failed" );
+
+    vprint( g_verbose, "    %-41s", "ECDH Algorithm" );
+    vprint( g_verbose, " %-40s", "SymCryptEcDhSecretAgreement");
+    scError = SymCryptEcDhSecretAgreement(
+                    pkKey1,
+                    pkKey2,
+                    SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
+                    0,
+                    pbAgreedSecret1,
+                    cbAgreedSecret );
+
+    CHECK( scError == SYMCRYPT_NO_ERROR, "SymCryptEcDhSecretAgreement failed" );
+    vprint( g_verbose, "Success\n");
+
+    scError = SymCryptEcDhSecretAgreement(
+                    pkKey2,
+                    pkKey1,
+                    SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
+                    0,
+                    pbAgreedSecret2,
+                    cbAgreedSecret );
+
+    CHECK( scError == SYMCRYPT_NO_ERROR, "SymCryptEcDhSecretAgreement failed" );
+    vprint( g_verbose, "Success\n");
+
+    CHECK( memcmp( pbAgreedSecret1, pbAgreedSecret2, cbAgreedSecret ) == 0, "SymCryptEcDhSecretAgreement is inconsistent between two parties");
     vprint( g_verbose, "Success\n");
     // =================================
 
@@ -252,9 +316,11 @@ testMontgomery(PSYMCRYPT_ECURVE  pCurve)
     SymCryptIntFree(piScalar);
     SymCryptEcpointFree(pCurve, poSrc);
     SymCryptEcpointFree(pCurve, poDst);
+    SymCryptEcpointFree(pCurve, poDst2);
     SymCryptEckeyFree(pkKey1);
+    SymCryptEckeyFree(pkKey2);
 
-    SymCryptWipe(pbScratch, cbScratch);
-    SymCryptCallbackFree(pbScratch);
+    SymCryptWipe(pbWorkspace, cbWorkspace);
+    SymCryptCallbackFree(pbWorkspace);
     vprint( g_verbose, "Success\n");
 }

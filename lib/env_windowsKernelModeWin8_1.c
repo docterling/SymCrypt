@@ -12,19 +12,27 @@
 
 
 //
-// Define _NTSYSTEM_ to supress some __declspec(dllimport) definitions, which under some circumstance lead
+// Define _NTSYSTEM_ to suppress some __declspec(dllimport) definitions, which under some circumstance lead
 // to an additional indirect function call, which adds some attack surface to kernel mode.
 //
 #define _NTSYSTEM_
 
-#include <nt.h>
-#include <ntrtl.h>
-#include <ntosp.h>
-#include <windef.h>
+#pragma warning(push)
+#pragma warning(disable: 5103) // Arm64's wdm.h included below currently generate a lot of 5103 warnings
+#include <ntddk.h>
+#pragma warning(pop)
 
 #include "symcrypt.h"
 #include "sc_lib.h"
 
+
+#if SYMCRYPT_CPU_AMD64
+//
+// KeGetCurrentIrql must be inlined on AMD64 to prevent linking errors with winload.sys, which
+// runs in an environment that does not define/implement KeGetCurrentIrql.
+//
+#define KeGetCurrentIrql() ((KIRQL)ReadCR8())
+#endif
 
 SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvWindowsKernelmodeWin8_1nLater()
 {
@@ -34,12 +42,11 @@ SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvWindowsKer
 
 VOID
 SYMCRYPT_CALL
-SymCryptInitEnvWindowsKernelmodeWin8_1nLater()
+SymCryptInitEnvWindowsKernelmodeWin8_1nLater( UINT32 version )
 {
+    #pragma warning(suppress: 4845) // Following declspec only applies when compiled with default initialization, in some test builds we don't care whether default initialization is specified
+    __declspec(no_init_all)
     RTL_OSVERSIONINFOW  verInfo;
-#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 
-    ULONGLONG   FeatureMask;
-#endif
 
     if( g_SymCryptFlags & SYMCRYPT_FLAG_LIB_INITIALIZED )
     {
@@ -69,13 +76,20 @@ SymCryptInitEnvWindowsKernelmodeWin8_1nLater()
     //
     // We also need to be sure that the OS supports the extended registers.
     //
-    FeatureMask = RtlGetEnabledExtendedFeatures( (ULONGLONG) -1 );
-
-    if( !(FeatureMask & XSTATE_MASK_AVX ) )
     {
-        g_SymCryptCpuFeaturesNotPresent |= SYMCRYPT_CPU_FEATURE_AVX2;
-    }
+        ULONGLONG FeatureMask = RtlGetEnabledExtendedFeatures( (ULONGLONG) -1 );
 
+        if( !(FeatureMask & XSTATE_MASK_AVX) )
+        {
+            g_SymCryptCpuFeaturesNotPresent |= SYMCRYPT_CPU_FEATURE_AVX2;
+        }
+
+        if( !(FeatureMask & XSTATE_MASK_AVX512) )
+        {
+            g_SymCryptCpuFeaturesNotPresent |= SYMCRYPT_CPU_FEATURE_AVX512;
+        }
+    }
+    
     //
     // Our SaveXmm function never fails because Win8.1 doesn't need XMM saving
     //
@@ -87,7 +101,7 @@ SymCryptInitEnvWindowsKernelmodeWin8_1nLater()
 
 #endif    
 
-    SymCryptInitEnvCommon();
+    SymCryptInitEnvCommon( version );
 }
 
 _Analysis_noreturn_
@@ -149,6 +163,13 @@ SymCryptSaveYmmEnvWindowsKernelmodeWin8_1nLater( _Out_ PSYMCRYPT_EXTENDED_SAVE_D
     if( !SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURE_AVX2 ) )
     {
         SymCryptFatal( ' mmy' );
+    }
+
+    // KeSaveExtendedProcessorState must only be called at IRQL <= DISPATCH_LEVEL
+    if( KeGetCurrentIrql() > DISPATCH_LEVEL )
+    {
+        result = SYMCRYPT_EXTERNAL_FAILURE;
+        goto cleanup;
     }
 
     //

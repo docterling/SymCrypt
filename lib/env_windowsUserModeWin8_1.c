@@ -5,7 +5,14 @@
 // Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
-#include "precomp.h"
+//#include "precomp.h"
+
+#pragma warning(push)
+#pragma warning(disable: 5103) // Arm64's wdm.h included below currently generate a lot of 5103 warnings
+#include <Windows.h>
+#pragma warning(pop)
+#include "symcrypt.h"
+#include "sc_lib.h"
 
 SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvWindowsUsermodeWin8_1nLater()
 {
@@ -14,9 +21,8 @@ SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvWindowsUse
 
 VOID
 SYMCRYPT_CALL
-SymCryptInitEnvWindowsUsermodeWin8_1nLater()
+SymCryptInitEnvWindowsUsermodeWin8_1nLater( UINT32 version )
 {
-
     if( g_SymCryptFlags & SYMCRYPT_FLAG_LIB_INITIALIZED )
     {
         return;
@@ -28,12 +34,21 @@ SymCryptInitEnvWindowsUsermodeWin8_1nLater()
     // 
     SymCryptDetectCpuFeaturesByCpuid( SYMCRYPT_CPUID_DETECT_FLAG_CHECK_OS_SUPPORT_FOR_YMM );
 
-    if( (GetEnabledXStateFeatures() & XSTATE_MASK_AVX) == 0 )
+    //
+    // We also need to be sure that the OS supports the extended registers.
+    //
     {
-        //
-        // Don't use Ymm registers if the OS doesn't report them as available.
-        //
-        g_SymCryptCpuFeaturesNotPresent |= SYMCRYPT_CPU_FEATURE_AVX2;
+        ULONGLONG FeatureMask = GetEnabledXStateFeatures();
+
+        if( !(FeatureMask & XSTATE_MASK_AVX) )
+        {
+            g_SymCryptCpuFeaturesNotPresent |= SYMCRYPT_CPU_FEATURE_AVX2;
+        }
+
+        if( !(FeatureMask & XSTATE_MASK_AVX512) )
+        {
+            g_SymCryptCpuFeaturesNotPresent |= SYMCRYPT_CPU_FEATURE_AVX512;
+        }
     }
 
     //
@@ -51,7 +66,7 @@ SymCryptInitEnvWindowsUsermodeWin8_1nLater()
 
 #endif    
 
-    SymCryptInitEnvCommon();
+    SymCryptInitEnvCommon( version );
 }
 
 _Analysis_noreturn_

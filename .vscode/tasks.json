@@ -1,0 +1,202 @@
+{
+    "version": "2.0.0",
+    "windows": {
+        "options": {
+            "shell": {
+                "executable": "powershell.exe",
+                "args": [
+                    "-command",
+                    "& { if (test-path ${workspaceFolder}\\.venv\\profile.ps1) { . ${workspaceFolder}\\.venv\\profile.ps1 } };"
+                ]
+            }
+        },
+    },
+    "linux": {
+        "options": {
+            "shell": {
+                "executable": "bash",
+                "args": [
+                    "-c",
+                ]
+            }
+        },
+    },
+    "tasks": [
+        {
+            "label": "Setup",
+            "type": "shell",
+            "options": {
+                "cwd": "${workspaceFolder}/"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "windows": {
+                "command": [
+                    "python -m venv .venv;",
+                    ". .\\.venv\\Scripts\\activate.ps1;",
+                    "pip install -r .\\scripts\\requirements.txt;",
+                    "Set-Content -value ('pushd;\n& \"\"\"' + (resolve-path 'C:\\Program Files\\Microsoft Visual Studio\\*\\*\\Common7\\Tools\\Launch-VsDevShell.ps1').path + '\"\"\" -Arch $env:PROCESSOR_ARCHITECTURE;\npopd') -path '${workspaceFolder}\\.venv\\profile.ps1';"
+                ]
+            },
+            "linux": {
+                "command": [
+                    "python3 -m venv .venv;",
+                    ". ./.venv/bin/activate;",
+                    "pip install -r ./scripts/requirements.txt;"
+                ]
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Clean",
+            "type": "shell",
+            "windows": {
+                "command": [
+                    "del -recurse bin_*,bin,.venv;"
+                ]
+            },
+            "linux": {
+                "command": [
+                    "rm -rf bin_* bin .venv"
+                ]
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            }
+        },
+        {
+            "label": "Build [Debug]",
+            "type": "shell",
+            "windows": {
+                "command": "python",
+                "args": [
+                    ".\\scripts\\build.py",
+                    "cmake",
+                    "bin",
+                    "--arch",
+                    "amd64",
+                    "--config",
+                    "Debug"
+                ]
+            },
+            "linux": {
+                "command": [
+                    "[ -f ./.venv/bin/activate ] && . ./.venv/bin/activate;",
+                    "python3 ./scripts/build.py cmake bin --arch amd64 --config Debug;",
+                    "exit"
+                ]
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            }
+        },
+        {
+            "label": "Rebuild [Skip CMake]",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "${workspaceFolder}/bin"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            }
+        },
+        {
+            "label": "Build with OpenSSL [Debug]",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                ".\\scripts\\build.py",
+                "cmake",
+                "bin",
+                "--arch",
+                "amd64",
+                "--config",
+                "Debug",
+                "--openssl-build-from-source"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            }
+        },
+        {
+            "label": "Build with OpenSSL [Release]",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                ".\\scripts\\build.py",
+                "cmake",
+                "bin",
+                "--config",
+                "Release",
+                "--openssl-build-from-source"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            }
+        }
+    ]
+}

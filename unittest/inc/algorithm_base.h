@@ -2,12 +2,12 @@
 // Algorithm_base.h
 // base classes for algorithm implementations
 //
-// Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
-// 
+// Copyright (c) Microsoft Corporation. Licensed under the MIT license.
+//
 
 //
 // AlgorithmImplementation class
-// This is the abstact class that represents the common properties
+// This is the abstract class that represents the common properties
 // of all algorithm implementations.
 //
 class AlgorithmImplementation
@@ -15,11 +15,11 @@ class AlgorithmImplementation
 public:
     AlgorithmImplementation();
     virtual ~AlgorithmImplementation() {};
-    
-private:    
+
+private:
     AlgorithmImplementation( const AlgorithmImplementation & );
     VOID operator =( const AlgorithmImplementation & );
-    
+
 public:
 
     std::string m_algorithmName;                // Name of algorithm
@@ -31,7 +31,7 @@ public:
     PerfDataFn  m_perfDataFunction;
     PerfDataFn  m_perfDecryptFunction;
     PerfCleanFn m_perfCleanFunction;
-    
+
     //
     // During functional testing we test all implementations of a single algorithm
     // in parallel. This makes debugging bugs triggered by the pseudo-random test cases
@@ -58,8 +58,10 @@ public:
     typedef struct _ALG_PERF_INFO
     {
         SIZE_T                  keySize;        // key size to add to row header. (0 if not used)
-        char *                  strPostfix;     // postfix string, must be 3 characters long
-        double                  cFixed;         // clocks of fixed overhead. 
+        SIZE_T                  dataSize;       // data size to add to row header. (only used with g_measure_specific_sizes)
+        char *                  operationName;  // operation name string, must be 3 characters long
+        char *                  strPostfix;     // postfix string, it is a string associated with a special key size for the given algorithm (i.e. data unit size, elliptic curve type, modulus type, etc.)
+        double                  cFixed;         // clocks of fixed overhead.
         double                  cPerByte;       // clocks average cost per byte (used only for linear records, 0 for non-linear records)
         double                  cRange;         // 90 percentile of deviation from prediction by previous two numbers
     } ALG_PERF_INFO;
@@ -80,20 +82,20 @@ private:
 public:
     virtual SIZE_T resultLen() = 0;
         // Return the result length of this hash
-        
+
     virtual SIZE_T inputBlockLen() = 0;
         // Return the input block length of this hash
 
     virtual VOID init() = 0;
         // Initialize for a new hash computation.
-        
+
     virtual VOID append( _In_reads_( cbData ) PCBYTE pbData, SIZE_T cbData ) = 0;
         // Append data to the running hash computation.
-        
+
     virtual VOID result( _Out_writes_( cbResult ) PBYTE pbResult, SIZE_T cbResult ) = 0;
         // Get the result of the running hash computation.
 
-    virtual VOID hash( _In_reads_( cbData ) PCBYTE pbData, SIZE_T cbData, 
+    virtual VOID hash( _In_reads_( cbData ) PCBYTE pbData, SIZE_T cbData,
                        _Out_writes_( cbResult ) PBYTE pbResult, SIZE_T cbResult );
         // Single hash computation.
         // The default implementation calls init/append/result so implementations that do not
@@ -109,10 +111,86 @@ public:
         // problem area.)
         // Return zero if success, NT status error if not supported.
 
-    virtual NTSTATUS exportSymCryptFormat( 
-            _Out_writes_bytes_to_( cbResultBufferSize, *pcbResult ) PBYTE   pbResult, 
-            _In_                                                    SIZE_T  cbResultBufferSize, 
+    virtual NTSTATUS exportSymCryptFormat(
+            _Out_writes_bytes_to_( cbResultBufferSize, *pcbResult ) PBYTE   pbResult,
+            _In_                                                    SIZE_T  cbResultBufferSize,
             _Out_                                                   SIZE_T *pcbResult ) = 0;
+};
+
+class XofImplementation : public AlgorithmImplementation
+{
+public:
+    XofImplementation() {};
+    virtual ~XofImplementation() {};
+
+private:
+    XofImplementation(const XofImplementation&);
+    VOID operator=(const XofImplementation&);
+
+public:
+
+    virtual SIZE_T inputBlockLen() = 0;
+    // Return the input block length of this XOF
+
+    virtual VOID init() = 0;
+    // Initialize for a new XOF computation.
+
+    virtual VOID append(_In_reads_(cbData) PCBYTE pbData, SIZE_T cbData) = 0;
+    // Append data to the running XOF computation.
+
+    virtual VOID extract(_Out_writes_(cbResult) PBYTE pbResult, SIZE_T cbResult, BOOLEAN bWipe) = 0;
+    // XOF extraction.
+    // Extracts cbResult bytes from the XOF. Wipes and re-initializes the state if bWipe=TRUE.
+
+    virtual VOID result(_Out_writes_(cbResult) PBYTE pbResult, SIZE_T cbResult) = 0;
+    // Get the result of the running XOF computation.
+    // Default implementation calls extract with bWipe=TRUE.
+
+    virtual VOID xof(_In_reads_(cbData) PCBYTE pbData, SIZE_T cbData,
+                    _Out_writes_(cbResult) PBYTE pbResult, SIZE_T cbResult);
+    // Single-call XOF computation.
+    // The default implementation calls init/append/result.
+};
+
+class CustomizableXofImplementation : public AlgorithmImplementation
+{
+public:
+    CustomizableXofImplementation() {};
+    virtual ~CustomizableXofImplementation() {};
+
+private:
+    CustomizableXofImplementation(const CustomizableXofImplementation&);
+    VOID operator=(const CustomizableXofImplementation&);
+
+public:
+
+    virtual SIZE_T inputBlockLen() = 0;
+    // Return the input block length of this XOF
+
+    virtual VOID init(  _In_reads_(cbNstr)  PCBYTE pbNstr,
+                                            SIZE_T cbNstr,
+                        _In_reads_(cbSstr)  PCBYTE pbSstr,
+                                            SIZE_T cbSstr) = 0;
+    // Initialize for a new XOF computation.
+
+    virtual VOID append(_In_reads_(cbData) PCBYTE pbData, SIZE_T cbData) = 0;
+    // Append data to the running XOF computation.
+
+    virtual VOID extract(_Out_writes_(cbResult) PBYTE pbResult, SIZE_T cbResult, BOOLEAN bWipe) = 0;
+    // XOF extraction.
+    // Extracts cbResult bytes from the XOF. Wipes and re-initializes the state if bWipe=TRUE.
+
+    virtual VOID result(_Out_writes_(cbResult) PBYTE pbResult, SIZE_T cbResult) = 0;
+    // Get the result of the running XOF computation.
+    // Default implementation calls extract with bWipe=TRUE.
+
+    virtual VOID xof(
+        _In_reads_( cbNstr )        PCBYTE  pbNstr, SIZE_T  cbNstr,
+        _In_reads_( cbSstr )        PCBYTE  pbSstr, SIZE_T  cbSstr,
+        _In_reads_( cbData )        PCBYTE  pbData, SIZE_T cbData,
+        _Out_writes_( cbResult )    PBYTE   pbResult, SIZE_T cbResult) = 0;
+    // Single-call XOF computation.
+    // The default implementation calls init/append/result.
 };
 
 #define MAX_PARALLEL_HASH_STATES        32
@@ -135,15 +213,15 @@ public:
 
     virtual SIZE_T resultLen() = 0;
         // Return the result length of this hash
-        
+
     virtual SIZE_T inputBlockLen() = 0;
         // Return the input block length of this hash
 
     virtual VOID init( SIZE_T nHashes ) = 0;
         // Initialize for a new hash computation.
         // nHashes = # hash states, nHashes <= MAX_PARALLEL_HASH_STATES
-        
-    virtual VOID process( 
+
+    virtual VOID process(
         _In_reads_( nOperations )   BCRYPT_MULTI_HASH_OPERATION *   pOperations,
                                     SIZE_T                          nOperations ) = 0;
         // Process BCrypt-style operations on the parallel hash state
@@ -182,17 +260,64 @@ public:
 
     virtual VOID append( _In_reads_( cbData ) PCBYTE pbData, SIZE_T cbData ) = 0;
         // Append data to the running MAC computation.
-        
+
     virtual VOID result( _Out_writes_( cbResult ) PBYTE pbResult, SIZE_T cbResult ) = 0;
         // Get the result of the running MAC computation.
 
-    virtual NTSTATUS mac( _In_reads_( cbKey )      PCBYTE pbKey,   SIZE_T cbKey, 
-                          _In_reads_( cbData )     PCBYTE pbData,  SIZE_T cbData, 
+    virtual NTSTATUS mac( _In_reads_( cbKey )      PCBYTE pbKey,   SIZE_T cbKey,
+                          _In_reads_( cbData )     PCBYTE pbData,  SIZE_T cbData,
                           _Out_writes_( cbResult )  PBYTE pbResult, SIZE_T cbResult );
         // Complete a full MAC computation.
         // The default implementation merely calls the init/append/result members.
         // Return zero if success, NT status error if not supported.
 };
+
+class KmacImplementation : public AlgorithmImplementation
+{
+public:
+    KmacImplementation() {};
+    ~KmacImplementation() {};
+
+private:
+    KmacImplementation(const KmacImplementation&);
+    VOID operator=(const KmacImplementation&);
+
+public:
+
+    virtual SIZE_T inputBlockLen() = 0;
+    // return the input block length of this MAC
+
+    virtual VOID init(
+        _In_reads_(cbCustomizationStr) PCBYTE pbCustomizationStr, SIZE_T cbCustomizationStr,
+        _In_reads_(cbKey) PCBYTE pbKey, SIZE_T cbKey) = 0;
+    // Start a new MAC computation with the given key and customization string.
+
+    virtual VOID append(_In_reads_(cbData) PCBYTE pbData, SIZE_T cbData) = 0;
+    // Append data to the running MAC computation.
+
+    virtual VOID extract(_Out_writes_(cbResult) PBYTE pbResult, SIZE_T cbResult, BOOLEAN bWipe) = 0;
+    // Extract data in XOF mode.
+
+    virtual VOID result(_Out_writes_(cbResult) PBYTE pbResult, SIZE_T cbResult) = 0;
+    // Get the result of the running MAC computation.
+
+    virtual VOID mac(
+        _In_reads_(cbCustomizationStr) PCBYTE pbCustomizationStr, SIZE_T cbCustomizationStr,
+        _In_reads_(cbKey)      PCBYTE pbKey, SIZE_T cbKey,
+        _In_reads_(cbData)     PCBYTE pbData, SIZE_T cbData,
+        _Out_writes_(cbResult)  PBYTE pbResult, SIZE_T cbResult);
+    // Complete a full MAC computation.
+    // The default implementation merely calls the init/append/result members.
+
+    virtual VOID xof(
+        _In_reads_(cbCustomizationStr) PCBYTE pbCustomizationStr, SIZE_T cbCustomizationStr,
+        _In_reads_(cbKey)      PCBYTE pbKey, SIZE_T cbKey,
+        _In_reads_(cbData)     PCBYTE pbData, SIZE_T cbData,
+        _Out_writes_(cbResult)  PBYTE pbResult, SIZE_T cbResult);
+    // Generate a fixed size output in XOF mode.
+    // The default implementation merely calls the init/append/extract members.
+};
+
 
 class BlockCipherImplementation: public AlgorithmImplementation
 //
@@ -218,22 +343,21 @@ public:
 
     virtual NTSTATUS setKey( PCBYTE pbKey, SIZE_T cbKey ) = 0;
 
-    virtual VOID encrypt( 
-        _Inout_updates_opt_( cbChain )  PBYTE pbChain, 
-                                        SIZE_T cbChain, 
-        _In_reads_( cbData )            PCBYTE pbSrc, 
-        _Out_writes_( cbData )          PBYTE pbDst, 
+    virtual VOID encrypt(
+        _Inout_updates_opt_( cbChain )  PBYTE pbChain,
+                                        SIZE_T cbChain,
+        _In_reads_( cbData )            PCBYTE pbSrc,
+        _Out_writes_( cbData )          PBYTE pbDst,
                                         SIZE_T cbData ) = 0;
 
-    virtual VOID decrypt( 
-        _Inout_updates_opt_( cbChain )  PBYTE pbChain, 
-                                        SIZE_T cbChain, 
-        _In_reads_( cbData )            PCBYTE pbSrc, 
-        _Out_writes_( cbData )          PBYTE pbDst, 
+    virtual VOID decrypt(
+        _Inout_updates_opt_( cbChain )  PBYTE pbChain,
+                                        SIZE_T cbChain,
+        _In_reads_( cbData )            PCBYTE pbSrc,
+        _Out_writes_( cbData )          PBYTE pbDst,
                                         SIZE_T cbData ) = 0;
 
 };
-
 
 class AuthEncImplementation: public AlgorithmImplementation
 //
@@ -265,34 +389,34 @@ public:
     // All authdata has to be passed in the first incremental call.
     // The last incremental call is marked by a nonzero pbTag.
     // setTotalCbData() must be called before each sequence of incremental calls.
-    // Implementations that don't do incremental processing can simply return 
+    // Implementations that don't do incremental processing can simply return
     // STATUS_NOT_SUPPORTED for all incremental calls.
 
-#define AUTHENC_FLAG_PARTIAL 1   
+#define AUTHENC_FLAG_PARTIAL 1
 
     virtual VOID setTotalCbData( SIZE_T cbData ) = 0;   // Set total cbData up front for partial processing (used by CCM)
-                
+
     virtual NTSTATUS encrypt(
-        _In_reads_( cbNonce )       PCBYTE  pbNonce,      
-                                    SIZE_T  cbNonce, 
-        _In_reads_( cbAuthData )    PCBYTE  pbAuthData, 
-                                    SIZE_T  cbAuthData, 
-        _In_reads_( cbData )        PCBYTE  pbSrc, 
-        _Out_writes_( cbData )      PBYTE   pbDst, 
+        _In_reads_( cbNonce )       PCBYTE  pbNonce,
+                                    SIZE_T  cbNonce,
+        _In_reads_( cbAuthData )    PCBYTE  pbAuthData,
+                                    SIZE_T  cbAuthData,
+        _In_reads_( cbData )        PCBYTE  pbSrc,
+        _Out_writes_( cbData )      PBYTE   pbDst,
                                     SIZE_T  cbData,
-        _Out_writes_( cbTag )       PBYTE   pbTag, 
+        _Out_writes_( cbTag )       PBYTE   pbTag,
                                     SIZE_T  cbTag,
                                     ULONG   flags ) = 0;
 
     virtual NTSTATUS decrypt(
-        _In_reads_( cbNonce )       PCBYTE  pbNonce,      
-                                    SIZE_T  cbNonce, 
-        _In_reads_( cbAuthData )    PCBYTE  pbAuthData, 
-                                    SIZE_T  cbAuthData, 
-        _In_reads_( cbData )        PCBYTE  pbSrc, 
-        _Out_writes_( cbData )      PBYTE   pbDst, 
+        _In_reads_( cbNonce )       PCBYTE  pbNonce,
+                                    SIZE_T  cbNonce,
+        _In_reads_( cbAuthData )    PCBYTE  pbAuthData,
+                                    SIZE_T  cbAuthData,
+        _In_reads_( cbData )        PCBYTE  pbSrc,
+        _Out_writes_( cbData )      PBYTE   pbDst,
                                     SIZE_T  cbData,
-        _In_reads_( cbTag )         PCBYTE  pbTag, 
+        _In_reads_( cbTag )         PCBYTE  pbTag,
                                     SIZE_T  cbTag,
                                     ULONG   flags ) = 0;
 };
@@ -308,21 +432,39 @@ private:
     VOID operator=( const XtsImplementation & );
 
 public:
-    virtual NTSTATUS setKey( PCBYTE pbKey, SIZE_T cbKey ) = 0;
+    virtual NTSTATUS setKey( PCBYTE pbKey, SIZE_T cbKey, UINT32 flags ) = 0;
 
-    virtual VOID encrypt( 
+    virtual NTSTATUS encrypt(
                                         SIZE_T      cbDataUnit,
                                         ULONGLONG   tweak,
-        _In_reads_( cbData )            PCBYTE      pbSrc, 
-        _Out_writes_( cbData )          PBYTE       pbDst, 
+        _In_reads_( cbData )            PCBYTE      pbSrc,
+        _Out_writes_( cbData )          PBYTE       pbDst,
                                         SIZE_T      cbData ) = 0;
+        // Return zero if success, NT status error if not supported.
 
-    virtual VOID decrypt( 
+    virtual NTSTATUS decrypt(
                                         SIZE_T      cbDataUnit,
                                         ULONGLONG   tweak,
-        _In_reads_( cbData )            PCBYTE      pbSrc, 
-        _Out_writes_( cbData )          PBYTE       pbDst, 
+        _In_reads_( cbData )            PCBYTE      pbSrc,
+        _Out_writes_( cbData )          PBYTE       pbDst,
                                         SIZE_T      cbData ) = 0;
+        // Return zero if success, NT status error if not supported.
+
+    virtual NTSTATUS encryptWith128bTweak(
+                                                SIZE_T  cbDataUnit,
+        _In_reads_( SYMCRYPT_AES_BLOCK_SIZE )   PCBYTE  pbTweak,
+        _In_reads_( cbData )                    PCBYTE  pbSrc,
+        _Out_writes_( cbData )                  PBYTE   pbDst,
+                                                SIZE_T  cbData ) = 0;
+        // Return zero if success, NT status error if not supported.
+
+    virtual NTSTATUS decryptWith128bTweak(
+                                                SIZE_T  cbDataUnit,
+        _In_reads_( SYMCRYPT_AES_BLOCK_SIZE )   PCBYTE  pbTweak,
+        _In_reads_( cbData )                    PCBYTE  pbSrc,
+        _Out_writes_( cbData )                  PBYTE   pbDst,
+                                                SIZE_T  cbData ) = 0;
+        // Return zero if success, NT status error if not supported.
 
 };
 
@@ -343,18 +485,54 @@ public:
 
     virtual NTSTATUS setKey( _In_reads_( cbKey ) PCBYTE pbKey, SIZE_T cbKey ) = 0;
 
-    virtual NTSTATUS setNonce( _In_reads_( cbKey ) PCBYTE pbNonce, SIZE_T cbNonce ) = 0;
+    virtual NTSTATUS setNonce( _In_reads_( cbNonce ) PCBYTE pbNonce, SIZE_T cbNonce ) = 0;
 
     virtual BOOL isRandomAccess() = 0;
 
     virtual VOID setOffset( UINT64 offset ) = 0;
 
-    virtual VOID encrypt( 
-        _In_reads_( cbData )    PCBYTE  pbSrc, 
-        _Out_writes_( cbData )  PBYTE   pbDst, 
+    virtual VOID encrypt(
+        _In_reads_( cbData )    PCBYTE  pbSrc,
+        _Out_writes_( cbData )  PBYTE   pbDst,
                                 SIZE_T  cbData ) = 0;
 };
 
+class KeyWrapImplementation: public AlgorithmImplementation
+//
+// Implements key-wrap encryption modes.
+//
+{
+public:
+    KeyWrapImplementation() {};
+    virtual ~KeyWrapImplementation() {};
+
+private:
+    KeyWrapImplementation( const KeyWrapImplementation & );
+    VOID operator=( const KeyWrapImplementation & );
+
+public:
+    virtual SIZE_T getMinPlaintextSize() = 0;
+    virtual SIZE_T getMaxPlaintextSize() = 0;
+    virtual SIZE_T getPlaintextSizeIncrement() = 0;
+    virtual std::set<SIZE_T> getKeySizes() = 0;
+
+    virtual NTSTATUS setKey( PCBYTE pbKey, SIZE_T cbKey ) = 0;
+
+    virtual NTSTATUS encrypt(
+        _In_reads_(cbSrc)                   PCBYTE  pbSrc,
+                                            SIZE_T  cbSrc,
+        _Out_writes_to_(cbDst, *pcbResult)  PBYTE   pbDst,
+                                            SIZE_T  cbDst,
+                                            SIZE_T* pcbResult ) = 0;
+
+    virtual NTSTATUS decrypt(
+        _In_reads_(cbSrc)                   PCBYTE  pbSrc,
+                                            SIZE_T  cbSrc,
+        _Out_writes_to_(cbDst, *pcbResult)  PBYTE   pbDst,
+                                            SIZE_T  cbDst,
+                                            SIZE_T* pcbResult ) = 0;
+
+};
 
 class RngSp800_90Implementation: public AlgorithmImplementation
 {
@@ -383,6 +561,9 @@ typedef enum _KDF_ARGUMENT_TYPE {
     KdfArgumentSp800_108 = 3,
     KdfArgumentTlsPrf = 4,
     KdfArgumentHkdf = 5,
+    KdfArgumentSshKdf = 6,
+    KdfArgumentSrtpKdf = 7,
+    KdfArgumentSskdf = 8,
 } KDF_ARGUMENT_TYPE;
 
 typedef struct _KDF_GENERIC_ARGUMENTS {
@@ -417,6 +598,31 @@ typedef struct _KDF_HKDF_ARGUMENTS {
     SIZE_T      cbInfo;
 } KDF_HKDF_ARGUMENTS;
 
+typedef struct _KDF_SSHKDF_ARGUMENTS {
+    PCSTR       hashName;
+    PCBYTE      pbHashValue;
+    SIZE_T      cbHashValue;
+    PCBYTE      pbSessionId;
+    SIZE_T      cbSessionId;
+    BYTE        label;
+} KDF_SSHKDF_ARGUMENTS;
+
+typedef struct _KDF_SRTPKDF_ARGUMENTS {
+    PCBYTE                      pbSalt;
+    SIZE_T                      cbSalt;
+    UINT32                      uKeyDerivationRate;
+    UINT64                      uIndex;
+    UINT32                      uIndexWidth;
+    BYTE                        label;
+} KDF_SRTPKDF_ARGUMENTS;
+
+typedef struct _KDF_SSKDF_ARGUMENTS {
+    PCBYTE      pbSalt;
+    SIZE_T      cbSalt;
+    PCBYTE      pbInfo;
+    SIZE_T      cbInfo;
+} KDF_SSKDF_ARGUMENTS;
+
 typedef struct _KDF_ARGUMENTS {
     KDF_ARGUMENT_TYPE   argType;
     union {
@@ -425,8 +631,11 @@ typedef struct _KDF_ARGUMENTS {
         KDF_SP800_108_ARGUMENTS uSp800_108;
         KDF_TLSPRF_ARGUMENTS    uTlsPrf;
         KDF_HKDF_ARGUMENTS      uHkdf;
+        KDF_SSHKDF_ARGUMENTS    uSshKdf;
+        KDF_SRTPKDF_ARGUMENTS   uSrtpKdf;
+        KDF_SSKDF_ARGUMENTS     uSskdf;
     };
-} KDF_ARGUMENTS, *PKDF_ARGUMENTS;        
+} KDF_ARGUMENTS, *PKDF_ARGUMENTS;
 typedef const KDF_ARGUMENTS *PCKDF_ARGUMENTS;
 
 class KdfImplementation: public AlgorithmImplementation
@@ -441,11 +650,11 @@ private:
 
 public:
 
-    virtual VOID derive( 
+    virtual VOID derive(
         _In_reads_( cbKey )     PCBYTE          pbKey,
                                 SIZE_T          cbKey,
         _In_                    PKDF_ARGUMENTS  args,
-        _Out_writes_( cbDst )   PBYTE           pbDst, 
+        _Out_writes_( cbDst )   PBYTE           pbDst,
                                 SIZE_T          cbDst ) = 0;
 
 };
@@ -486,18 +695,361 @@ private:
 public:
 };
 
-// RsaImplementation class is only used for performance measurements of RSA
-class RsaImplementation: public AlgorithmImplementation
+// We need an implementation-independent way to store RSA keys
+// As RSA key gen is so expensive, we generate a bunch of keys up front and use
+// them for all tests.
+
+#define RSAKEY_MAXKEYSIZE   (1024)  // 8192 bits = 1024 bytes
+typedef struct _RSAKEY_TESTBLOB {
+    UINT32  nBitsModulus;
+    UINT64  u64PubExp;
+    UINT32  cbModulus;
+    UINT32  cbPrime1;
+    UINT32  cbPrime2;
+    BYTE    abModulus[RSAKEY_MAXKEYSIZE];
+    BYTE    abPrime1[RSAKEY_MAXKEYSIZE];
+    BYTE    abPrime2[RSAKEY_MAXKEYSIZE];
+    BYTE    abPrivateExp[RSAKEY_MAXKEYSIZE];
+
+    // And some fields to make debugging easier
+    const char *    pcstrSource;    // Where did this key come from
+    INT64  u64Line;                 // line # of test vector file (if applicable)
+} RSAKEY_TESTBLOB, *PRSAKEY_TESTBLOB;
+typedef const RSAKEY_TESTBLOB * PCRSAKEY_TESTBLOB;
+
+class RsaSignImplementation: public AlgorithmImplementation
 {
 public:
-    RsaImplementation() {};
-    virtual ~RsaImplementation() {};
+    RsaSignImplementation() {};
+    virtual ~RsaSignImplementation() {};
 
 private:
-    RsaImplementation( const RsaImplementation & );
-    VOID operator=( const RsaImplementation & );
+    RsaSignImplementation( const RsaSignImplementation & );
+    VOID operator=( const RsaSignImplementation & );
 
 public:
+    virtual NTSTATUS setKey( PCRSAKEY_TESTBLOB pcKeyBlob ) = 0; // Returns an error if this key can't be handled.
+
+    // This is the abstraction that covers both PKCS1 and PSS. Both take a hash alg as parameter.
+    // We also add a salt size used for PSS.
+    virtual NTSTATUS sign(
+        _In_reads_( cbHash)     PCBYTE  pbHash,
+                                SIZE_T  cbHash,
+                                PCSTR   pcstrHashAlgName,
+                                UINT32  u32Other,
+        _Out_writes_( cbSig )   PBYTE   pbSig,
+                                SIZE_T  cbSig ) = 0;        // cbSig == cbModulus of key
+
+    virtual NTSTATUS verify(
+        _In_reads_( cbHash)     PCBYTE  pbHash,
+                                SIZE_T  cbHash,
+        _In_reads_( cbSig )     PCBYTE  pbSig,
+                                SIZE_T  cbSig,
+                                PCSTR   pcstrHashAlgName,
+                                UINT32  u32Other ) = 0;
+};
+
+class RsaEncImplementation: public AlgorithmImplementation
+{
+public:
+    RsaEncImplementation() {};
+    virtual ~RsaEncImplementation() {};
+
+private:
+    RsaEncImplementation( const RsaEncImplementation & );
+    VOID operator=( const RsaEncImplementation & );
+
+public:
+    virtual NTSTATUS setKey( PCRSAKEY_TESTBLOB pcKeyBlob ) = 0; // Returns an error if this key can't be handled.
+
+    // This is the abstraction that covers RAW, PKCS1 and OAEP.
+    virtual NTSTATUS encrypt(
+        _In_reads_( cbMsg )             PCBYTE  pbMsg,
+                                        SIZE_T  cbMsg,
+                                        PCSTR   pcstrHashAlgName,
+                                        PCBYTE  pbLabel,
+                                        SIZE_T  cbLabel,
+        _Out_writes_( cbCiphertext )    PBYTE   pbCiphertext,
+                                        SIZE_T  cbCiphertext ) = 0;        // == cbModulus of key
+
+    virtual NTSTATUS decrypt(
+        _In_reads_( cbCiphertext )      PCBYTE  pbCiphertext,
+                                        SIZE_T  cbCiphertext,
+                                        PCSTR   pcstrHashAlgName,
+                                        PCBYTE  pbLabel,
+                                        SIZE_T  cbLabel,
+        _Out_writes_to_(cbMsg,*pcbMsg)  PBYTE   pbMsg,
+                                        SIZE_T  cbMsg,
+                                        SIZE_T *pcbMsg ) = 0;
+};
+
+#define DLKEY_MAXKEYSIZE    (1024)  // 8192 bits = 1024 bytes. Generating larger groups is too slow for testing
+typedef struct _DLGROUP_TESTBLOB {
+    UINT32                  nBitsP;             // P = field prime, Q = subgroup order, G = generator
+    UINT32                  cbPrimeP;           //
+    UINT32                  cbPrimeQ;           // can be 0 if group order is not known
+    SYMCRYPT_DLGROUP_FIPS   fipsStandard;       // Which FIPS standard was used to generate this group
+    PCSYMCRYPT_HASH         pHashAlgorithm;     // Used for FIPS group generation
+    UINT32                  cbSeed;             // FIPS group generation seed
+    UINT32                  genCounter;         // FIPS group generation counter
+
+    BOOLEAN                 fHasPrimeQ;         // Flag that specifies whether the object has a Q parameter
+    BOOLEAN                 isSafePrimeGroup;   // Boolean indicating if this is a Safe Prime group
+    PCSTR                   pcstrHashAlgName;   // Used for FIPS group generation in multi-implementation tests
+
+    BYTE    abPrimeP[DLKEY_MAXKEYSIZE];     // cbPrimeP bytes
+    BYTE    abPrimeQ[DLKEY_MAXKEYSIZE];     // cbPrimeQ bytes (optional)
+    BYTE    abGenG[DLKEY_MAXKEYSIZE];       // cbPrimeP bytes
+    BYTE    abSeed[DLKEY_MAXKEYSIZE];       // cbSeed bytes, cbSeed = 0 or cbSeed = cbPrimeQ
+} DLGROUP_TESTBLOB, *PDLGROUP_TESTBLOB;
+typedef const DLGROUP_TESTBLOB * PCDLGROUP_TESTBLOB;
+
+typedef struct _DLKEY_TESTBLOB {
+    PCDLGROUP_TESTBLOB  pGroup;
+    UINT32              nBitsPriv;                      // Non-zero value indicates Dlkey in DH safe-prime group with
+                                                        // specified private key length
+    UINT32              cbPrivKey;                      //
+    BYTE                abPubKey[DLKEY_MAXKEYSIZE];     // cbPrimeP bytes
+    BYTE                abPrivKey[DLKEY_MAXKEYSIZE];    // cbPrivKey bytes
+    BOOL                fPrivateModP;                   // private key in range [1,P-2] - not [1,Q-1]
+} DLKEY_TESTBLOB, *PDLKEY_TESTBLOB;
+typedef const DLKEY_TESTBLOB * PCDLKEY_TESTBLOB;
+
+class DhImplementation: public AlgorithmImplementation
+{
+public:
+    DhImplementation() {};
+    virtual ~DhImplementation() {};
+
+private:
+    DhImplementation( const DhImplementation & );
+    VOID operator=( const DhImplementation & );
+
+public:
+    virtual NTSTATUS setKey(
+        _In_    PCDLKEY_TESTBLOB    pcKeyBlob ) = 0; // Returns an error if this key can't be handled.
+
+    virtual NTSTATUS sharedSecret(
+        _In_                        PCDLKEY_TESTBLOB    pcPubkey,   // Must be on same group object
+        _Out_writes_( cbSecret )    PBYTE               pbSecret,
+                                    SIZE_T              cbSecret ) = 0;
+};
+
+class DsaImplementation: public AlgorithmImplementation
+{
+public:
+    DsaImplementation() {};
+    virtual ~DsaImplementation() {};
+
+private:
+    DsaImplementation( const DsaImplementation & );
+    VOID operator=( const DsaImplementation & );
+
+public:
+    virtual NTSTATUS setKey(
+        _In_    PCDLKEY_TESTBLOB    pcKeyBlob ) = 0; // Returns an error if this key can't be handled.
+
+    virtual NTSTATUS sign(
+        _In_reads_( cbHash)     PCBYTE  pbHash,
+                                SIZE_T  cbHash,             // Can be any size, but often = size of Q
+        _Out_writes_( cbSig )   PBYTE   pbSig,
+                                SIZE_T  cbSig ) = 0;        // cbSig == 2 * cbPrimeQ of group
+
+    virtual NTSTATUS verify(
+        _In_reads_( cbHash)     PCBYTE  pbHash,
+                                SIZE_T  cbHash,
+        _In_reads_( cbSig )     PCBYTE  pbSig,
+                                SIZE_T  cbSig ) = 0;
+};
+
+#define SYMCRYPT_TEST_MLDSA_MAX_KEY_SIZE (4896) // Maximum size of an encoded ML-DSA private + public key - see SymCryptMlDsaInternalParams87
+#define SYMCRYPT_TEST_MLDSA_MAX_SIG_SIZE SYMCRYPT_MLDSA_SIGNATURE_SIZE_MLDSA87
+
+typedef struct _SYMCRYPT_PERF_MLDSAKEY {
+    SIZE_T                      keySize;
+    SYMCRYPT_MLDSA_PARAMS       params;
+    PSYMCRYPT_MLDSAKEY          pkMlDsakey;
+} SYMCRYPT_PERF_MLDSAKEY, *PSYMCRYPT_PERF_MLDSAKEY;
+
+typedef struct _MLDSAKEY_TESTBLOB {
+    SYMCRYPT_MLDSA_PARAMS    params;
+    SYMCRYPT_MLDSAKEY_FORMAT format;
+    BYTE                     abKeyBlob[SYMCRYPT_TEST_MLDSA_MAX_KEY_SIZE];
+    SIZE_T                   cbKeyBlob;
+} MLDSAKEY_TESTBLOB, *PMLDSAKEY_TESTBLOB;
+typedef const MLDSAKEY_TESTBLOB * PCMLDSAKEY_TESTBLOB;
+
+typedef union _PQDSAKEY_TESTBLOB {
+    MLDSAKEY_TESTBLOB   mlDsakey;
+} PQDSAKEY_TESTBLOB, *PPQDSAKEY_TESTBLOB;
+typedef const PQDSAKEY_TESTBLOB * PCPQDSAKEY_TESTBLOB;
+
+// AlgorithmImplementation base class for post-quantum digital signatures algorithms, such as
+// ML-DSA and SLH-DSA
+class PqDsaImplementation : public AlgorithmImplementation
+{
+public:
+    PqDsaImplementation() = default;
+    virtual ~PqDsaImplementation() = default;
+
+private:
+    PqDsaImplementation (const PqDsaImplementation&) = delete;
+    VOID operator= (const PqDsaImplementation&) = delete;
+
+public:
+    virtual NTSTATUS setKey(
+        _In_                    PCPQDSAKEY_TESTBLOB pcKeyBlob ) = 0;
+
+    virtual NTSTATUS getBlobFromKey(
+                                UINT32              keyFormat,
+        _Out_writes_( cbBlob )  PBYTE               pbBlob,
+                                SIZE_T              cbBlob ) = 0;
+
+    virtual NTSTATUS sign(
+        _In_reads_bytes_( cbInput )                         PCBYTE                  pbInput,
+                                                            SIZE_T                  cbInput,
+        _In_reads_bytes_opt_( cbContext )                   PCBYTE                  pbContext,
+        _In_range_( 0, SYMCRYPT_MLDSA_CONTEXT_MAX_LENGTH )  SIZE_T                  cbContext,
+        _Out_writes_bytes_( cbSignature )                   PBYTE                   pbSignature,
+                                                            SIZE_T                  cbSignature ) = 0;
+
+    virtual NTSTATUS signExternalMu(
+        _In_reads_bytes_( cbMu )                            PCBYTE                  pbMu,
+                                                            SIZE_T                  cbMu,
+        _Out_writes_bytes_( cbSignature )                   PBYTE                   pbSignature,
+                                                            SIZE_T                  cbSignature ) = 0;
+
+    virtual NTSTATUS signHash(
+                                                            SYMCRYPT_PQDSA_HASH_ID  hashId,
+        _In_reads_bytes_( cbHash )                          PCBYTE                  pbHash,
+                                                            SIZE_T                  cbHash,
+        _In_reads_bytes_opt_( cbContext )                   PCBYTE                  pbContext,
+        _In_range_( 0, SYMCRYPT_MLDSA_CONTEXT_MAX_LENGTH )  SIZE_T                  cbContext,
+        _Out_writes_bytes_( cbSignature )                   PBYTE                   pbSignature,
+                                                            SIZE_T                  cbSignature ) = 0;
+
+    virtual NTSTATUS signEx(
+                                                            SYMCRYPT_PQDSA_HASH_ID  hashId,
+        _In_reads_bytes_( cbInput )                         PCBYTE                  pbInput,
+                                                            SIZE_T                  cbInput,
+        _In_reads_bytes_opt_( cbContext )                   PCBYTE                  pbContext,
+        _In_range_( 0, SYMCRYPT_MLDSA_CONTEXT_MAX_LENGTH )  SIZE_T                  cbContext,
+        _In_reads_bytes_( cbRandom )                        PCBYTE                  pbRandom,
+                                                            SIZE_T                  cbRandom,
+                                                            UINT32                  flags,
+        _Out_writes_bytes_( cbSignature )                   PBYTE                   pbSignature,
+                                                            SIZE_T                  cbSignature ) = 0;
+
+    virtual NTSTATUS verify(
+        _In_reads_bytes_( cbMessage )                       PCBYTE                  pbMessage,
+                                                            SIZE_T                  cbMessage,
+        _In_reads_bytes_opt_( cbContext )                   PCBYTE                  pbContext,
+        _In_range_( 0, SYMCRYPT_MLDSA_CONTEXT_MAX_LENGTH )  SIZE_T                  cbContext,
+        _In_reads_bytes_( cbSignature )                     PCBYTE                  pbSignature,
+                                                            SIZE_T                  cbSignature ) = 0;
+
+    virtual NTSTATUS verifyExternalMu(
+        _In_reads_bytes_( cbMu )                            PCBYTE                  pbMu,
+                                                            SIZE_T                  cbMu,
+        _In_reads_bytes_( cbSignature )                     PCBYTE                  pbSignature,
+                                                            SIZE_T                  cbSignature ) = 0;
+
+    virtual NTSTATUS verifyHash(
+                                                            SYMCRYPT_PQDSA_HASH_ID  hashId,
+        _In_reads_bytes_( cbHash )                          PCBYTE                  pbHash,
+                                                            SIZE_T                  cbHash,
+        _In_reads_bytes_opt_( cbContext )                   PCBYTE                  pbContext,
+        _In_range_( 0, SYMCRYPT_MLDSA_CONTEXT_MAX_LENGTH )  SIZE_T                  cbContext,
+        _In_reads_bytes_( cbSignature )                     PCBYTE                  pbSignature,
+                                                            SIZE_T                  cbSignature ) = 0;
+};
+
+template< class Implementation, class Algorithm> class PqDsaImpState;
+
+template< class Implementation, class Algorithm>
+class PqDsaImp : public PqDsaImplementation
+{
+public:
+    PqDsaImp();
+    virtual ~PqDsaImp() override = default;
+
+private:
+    PqDsaImp (const PqDsaImp&) = delete;
+    VOID operator= (const PqDsaImp&) = delete;
+
+public:
+    static const String s_algName;             // Algorithm name
+    static const String s_modeName;
+    static const String s_impName;             // Implementation name
+
+public:
+    virtual NTSTATUS setKey(
+        _In_                    PCPQDSAKEY_TESTBLOB pcKeyBlob ) override;
+
+    virtual NTSTATUS getBlobFromKey(
+                                UINT32              keyFormat,
+        _Out_writes_( cbBlob )  PBYTE               pbBlob,
+                                SIZE_T              cbBlob ) override;
+
+    virtual NTSTATUS sign(
+        _In_reads_bytes_( cbMessage )                       PCBYTE                  pbMessage,
+                                                            SIZE_T                  cbMessage,
+        _In_reads_bytes_opt_( cbContext )                   PCBYTE                  pbContext,
+        _In_range_( 0, SYMCRYPT_MLDSA_CONTEXT_MAX_LENGTH )  SIZE_T                  cbContext,
+        _Out_writes_bytes_( cbSignature )                   PBYTE                   pbSignature,
+                                                            SIZE_T                  cbSignature ) override;
+
+    virtual NTSTATUS signExternalMu(
+        _In_reads_bytes_( cbMu )                            PCBYTE                  pbMu,
+                                                            SIZE_T                  cbMu,
+        _Out_writes_bytes_( cbSignature )                   PBYTE                   pbSignature,
+                                                            SIZE_T                  cbSignature ) override;
+
+    virtual NTSTATUS signHash(
+                                                            SYMCRYPT_PQDSA_HASH_ID  hashId,
+        _In_reads_bytes_( cbHash )                          PCBYTE                  pbHash,
+                                                            SIZE_T                  cbHash,
+        _In_reads_bytes_opt_( cbContext )                   PCBYTE                  pbContext,
+        _In_range_( 0, SYMCRYPT_MLDSA_CONTEXT_MAX_LENGTH )  SIZE_T                  cbContext,
+        _Out_writes_bytes_( cbSignature )                   PBYTE                   pbSignature,
+                                                            SIZE_T                  cbSignature ) override;
+
+    virtual NTSTATUS signEx(
+                                                            SYMCRYPT_PQDSA_HASH_ID  hashId,
+        _In_reads_bytes_( cbInput )                         PCBYTE                  pbInput,
+                                                            SIZE_T                  cbInput,
+        _In_reads_bytes_opt_( cbContext )                   PCBYTE                  pbContext,
+        _In_range_( 0, SYMCRYPT_MLDSA_CONTEXT_MAX_LENGTH )  SIZE_T                  cbContext,
+        _In_reads_bytes_( cbRandom )                        PCBYTE                  pbRandom,
+                                                            SIZE_T                  cbRandom,
+                                                            UINT32                  flags,
+        _Out_writes_bytes_( cbSignature )                   PBYTE                   pbSignature,
+                                                            SIZE_T                  cbSignature ) override;
+
+    virtual NTSTATUS verify(
+        _In_reads_bytes_( cbMessage )                       PCBYTE                  pbMessage,
+                                                            SIZE_T                  cbMessage,
+        _In_reads_bytes_opt_( cbContext )                   PCBYTE                  pbContext,
+        _In_range_( 0, SYMCRYPT_MLDSA_CONTEXT_MAX_LENGTH )  SIZE_T                  cbContext,
+        _In_reads_bytes_( cbSignature )                     PCBYTE                  pbSignature,
+                                                            SIZE_T                  cbSignature ) override;
+
+    virtual NTSTATUS verifyExternalMu(
+        _In_reads_bytes_( cbMu )                            PCBYTE                  pbMu,
+                                                            SIZE_T                  cbMu,
+        _In_reads_bytes_( cbSignature )                     PCBYTE                  pbSignature,
+                                                            SIZE_T                  cbSignature ) override;
+
+    virtual NTSTATUS verifyHash(
+                                                            SYMCRYPT_PQDSA_HASH_ID  hashId,
+        _In_reads_bytes_( cbHash )                          PCBYTE                  pbHash,
+                                                            SIZE_T                  cbHash,
+        _In_reads_bytes_opt_( cbContext )                   PCBYTE                  pbContext,
+        _In_range_( 0, SYMCRYPT_MLDSA_CONTEXT_MAX_LENGTH )  SIZE_T                  cbContext,
+        _In_reads_bytes_( cbSignature )                     PCBYTE                  pbSignature,
+                                                            SIZE_T                  cbSignature ) override;
+
+    PqDsaImpState<Implementation,Algorithm> state;
 };
 
 // DlImplementation class is only used for performance measurements of Discrete Log group algorithms
@@ -541,7 +1093,7 @@ template< class Implementation, class Algorithm> class HashImpState;
 //
 // A template class for the actual hash algorithm implementations
 //
-template< class Implementation, class Algorithm > 
+template< class Implementation, class Algorithm >
 class HashImp: public HashImplementation
 {
 public:
@@ -564,15 +1116,15 @@ public:
     virtual void init();
     virtual void append( _In_reads_( cbData ) PCBYTE pbData, SIZE_T cbData );
     virtual void result( _Out_writes_( cbResult ) PBYTE pbResult, SIZE_T cbResult );
-    virtual VOID hash( 
-        _In_reads_( cbData )       PCBYTE pbData, 
-                                    SIZE_T cbData, 
-        _Out_writes_( cbResult )    PBYTE pbResult, 
+    virtual VOID hash(
+        _In_reads_( cbData )       PCBYTE pbData,
+                                    SIZE_T cbData,
+        _Out_writes_( cbResult )    PBYTE pbResult,
                                     SIZE_T cbResult );
     virtual NTSTATUS initWithLongMessage( ULONGLONG nBytes );
-    virtual NTSTATUS exportSymCryptFormat( 
-            _Out_writes_bytes_to_( cbResultBufferSize, *pcbResult ) PBYTE   pbResult, 
-            _In_                                                    SIZE_T  cbResultBufferSize, 
+    virtual NTSTATUS exportSymCryptFormat(
+            _Out_writes_bytes_to_( cbResultBufferSize, *pcbResult ) PBYTE   pbResult,
+            _In_                                                    SIZE_T  cbResultBufferSize,
             _Out_                                                   SIZE_T *pcbResult );
 
     HashImpState<Implementation,Algorithm> state;
@@ -586,7 +1138,7 @@ template< class Implementation, class Algorithm> class ParallelHashImpState;
 //
 // A template class for the actual hash algorithm implementations
 //
-template< class Implementation, class Algorithm > 
+template< class Implementation, class Algorithm >
 class ParallelHashImp: public ParallelHashImplementation
 {
 public:
@@ -606,19 +1158,108 @@ public:
     virtual PCSYMCRYPT_HASH SymCryptHash();
 
     virtual SIZE_T resultLen();
-        
+
     virtual SIZE_T inputBlockLen();
 
     virtual VOID init( SIZE_T nHashes );
-        
-    virtual VOID process( 
+
+    virtual VOID process(
         _In_reads_( nOperations )   BCRYPT_MULTI_HASH_OPERATION *   pOperations,
                                     SIZE_T                          nOperations );
-        
+
 
     virtual NTSTATUS initWithLongMessage( ULONGLONG nBytes );
 
     ParallelHashImpState<Implementation,Algorithm> state;
+};
+
+
+//
+// A template class to store the state of a XOF implementation in.
+//
+template< class Implementation, class Algorithm> class XofImpState;
+
+//
+// A template class for the actual XOF implementations
+//
+template< class Implementation, class Algorithm >
+class XofImp: public XofImplementation
+{
+public:
+    XofImp();
+    virtual ~XofImp();
+
+private:
+    XofImp( const XofImp & );
+    VOID operator=( const XofImp & );
+
+public:
+
+    static const String s_algName;             // Algorithm name
+    static const String s_modeName;
+    static const String s_impName;             // Implementation name
+
+    virtual SIZE_T inputBlockLen();
+
+    virtual void init();
+    virtual void append( _In_reads_( cbData ) PCBYTE pbData, SIZE_T cbData );
+    virtual void extract( _Out_writes_( cbResult ) PBYTE pbResult, SIZE_T cbResult, BOOLEAN bWipe);
+    virtual void result( _Out_writes_( cbResult ) PBYTE pbResult, SIZE_T cbResult );
+    virtual VOID xof(
+        _In_reads_( cbData )        PCBYTE  pbData,
+                                    SIZE_T  cbData,
+        _Out_writes_( cbResult )    PBYTE   pbResult,
+                                    SIZE_T  cbResult );
+
+    XofImpState<Implementation,Algorithm> state;
+};
+
+//
+// A template class to store the state of a customizable XOF implementation in.
+//
+template< class Implementation, class Algorithm> class CustomizableXofImpState;
+
+//
+// A template class for the actual XOF implementations
+//
+template< class Implementation, class Algorithm >
+class CustomizableXofImp : public CustomizableXofImplementation
+{
+public:
+    CustomizableXofImp();
+    virtual ~CustomizableXofImp();
+
+private:
+    CustomizableXofImp(const CustomizableXofImp&);
+    VOID operator=(const CustomizableXofImp&);
+
+public:
+
+    static const String s_algName;             // Algorithm name
+    static const String s_modeName;
+    static const String s_impName;             // Implementation name
+
+    virtual SIZE_T inputBlockLen();
+
+    virtual void init(
+        _In_reads_( cbNstr )        PCBYTE  pbNstr,
+                                    SIZE_T  cbNstr,
+        _In_reads_( cbSstr )        PCBYTE  pbSstr,
+                                    SIZE_T  cbSstr);
+    virtual void append(_In_reads_(cbData) PCBYTE pbData, SIZE_T cbData);
+    virtual void extract(_Out_writes_(cbResult) PBYTE pbResult, SIZE_T cbResult, BOOLEAN bWipe);
+    virtual void result(_Out_writes_(cbResult) PBYTE pbResult, SIZE_T cbResult);
+    virtual VOID xof(
+        _In_reads_( cbNstr )        PCBYTE  pbNstr,
+                                    SIZE_T  cbNstr,
+        _In_reads_( cbSstr )        PCBYTE  pbSstr,
+                                    SIZE_T  cbSstr,
+        _In_reads_( cbData )        PCBYTE  pbData,
+                                    SIZE_T  cbData,
+        _Out_writes_( cbResult )    PBYTE   pbResult,
+                                    SIZE_T  cbResult );
+
+    CustomizableXofImpState<Implementation, Algorithm> state;
 };
 
 
@@ -630,7 +1271,7 @@ template< class Implementation, class Algorithm> class MacImpState;
 //
 // Template class for the actual MAC implementations
 //
-template< class Implementation, class Algorithm > 
+template< class Implementation, class Algorithm >
 class MacImp: public MacImplementation
 {
 public:
@@ -646,22 +1287,81 @@ public:
     static const String s_algName;
     static const String s_modeName;
     static const String s_impName;
-    
+
     virtual SIZE_T resultLen();
     virtual SIZE_T inputBlockLen();
-    
+
     virtual NTSTATUS init( _In_reads_( cbKey ) PCBYTE pbKey, SIZE_T cbKey );
     virtual VOID append( _In_reads_( cbData ) PCBYTE pbData, SIZE_T cbData );
     virtual VOID result( _Out_writes_( cbResult ) PBYTE pbResult, SIZE_T cbResult );
-    virtual NTSTATUS mac( 
-        _In_reads_( cbKey )        PCBYTE pbKey, 
-                                    SIZE_T cbKey, 
-        _In_reads_( cbData )       PCBYTE pbData, 
-                                    SIZE_T cbData, 
-        _Out_writes_( cbResult )    PBYTE pbResult, 
+    virtual NTSTATUS mac(
+        _In_reads_( cbKey )        PCBYTE pbKey,
+                                    SIZE_T cbKey,
+        _In_reads_( cbData )       PCBYTE pbData,
+                                    SIZE_T cbData,
+        _Out_writes_( cbResult )    PBYTE pbResult,
                                     SIZE_T cbResult );
 
     MacImpState<Implementation,Algorithm> state;
+};
+
+//
+// A template class to store the state of a KMAC implementation in.
+//
+template< class Implementation, class Algorithm> class KmacImpState;
+
+//
+// Template class for the actual MAC implementations
+//
+template< class Implementation, class Algorithm >
+class KmacImp : public KmacImplementation
+{
+public:
+    KmacImp();
+    virtual ~KmacImp();
+
+private:
+    KmacImp(const KmacImp&);
+    VOID operator=(const KmacImp&);
+
+public:
+
+    static const String s_algName;
+    static const String s_modeName;
+    static const String s_impName;
+
+    virtual SIZE_T inputBlockLen();
+
+    virtual VOID init(
+        _In_reads_(cbCustomizationStr)  PCBYTE  pbCustomizationStr,
+                                        SIZE_T  cbCustomizationStr,
+        _In_reads_(cbKey)               PCBYTE  pbKey,
+                                        SIZE_T  cbKey);
+
+    virtual VOID append(_In_reads_(cbData) PCBYTE pbData, SIZE_T cbData);
+    virtual VOID result(_Out_writes_(cbResult) PBYTE pbResult, SIZE_T cbResult);
+    virtual VOID extract(_Out_writes_(cbResult) PBYTE pbResult, SIZE_T cbResult, BOOLEAN bWipe);
+    virtual VOID mac(
+        _In_reads_(cbCustomizationStr)  PCBYTE  pbCustomizationStr,
+                                        SIZE_T  cbCustomizationStr,
+        _In_reads_(cbKey)               PCBYTE  pbKey,
+                                        SIZE_T  cbKey,
+        _In_reads_(cbData)              PCBYTE  pbData,
+                                        SIZE_T  cbData,
+        _Out_writes_(cbResult)          PBYTE   pbResult,
+                                        SIZE_T  cbResult);
+
+    virtual VOID xof(
+        _In_reads_(cbCustomizationStr)  PCBYTE  pbCustomizationStr,
+                                        SIZE_T  cbCustomizationStr,
+        _In_reads_(cbKey)               PCBYTE  pbKey,
+                                        SIZE_T  cbKey,
+        _In_reads_(cbData)              PCBYTE  pbData,
+                                        SIZE_T  cbData,
+        _Out_writes_(cbResult)          PBYTE   pbResult,
+                                        SIZE_T  cbResult);
+
+    KmacImpState<Implementation, Algorithm> state;
 };
 
 
@@ -682,24 +1382,24 @@ public:
     static const String s_algName;
     static const String s_modeName;
     static const String s_impName;
-    
+
     virtual SIZE_T msgBlockLen();       // block length of mode (msg must be multiple of this)
     virtual SIZE_T chainBlockLen();     // length of chaining field
 
     virtual SIZE_T coreBlockLen();      // block length of underlying cipher
 
     virtual NTSTATUS setKey( _In_reads_( cbKey ) PCBYTE pbKey, SIZE_T cbKey );
-    virtual VOID encrypt( 
-        _Inout_updates_opt_( cbChain )   PBYTE pbChain, 
-                                        SIZE_T cbChain, 
-        _In_reads_( cbData )           PCBYTE pbSrc, 
-        _Out_writes_( cbData )          PBYTE pbDst, 
+    virtual VOID encrypt(
+        _Inout_updates_opt_( cbChain )   PBYTE pbChain,
+                                        SIZE_T cbChain,
+        _In_reads_( cbData )           PCBYTE pbSrc,
+        _Out_writes_( cbData )          PBYTE pbDst,
                                         SIZE_T cbData );
-    virtual VOID decrypt( 
-        _Inout_updates_opt_( cbChain )   PBYTE pbChain, 
-                                        SIZE_T cbChain, 
-        _In_reads_( cbData )           PCBYTE pbSrc, 
-        _Out_writes_( cbData )          PBYTE pbDst, 
+    virtual VOID decrypt(
+        _Inout_updates_opt_( cbChain )   PBYTE pbChain,
+                                        SIZE_T cbChain,
+        _In_reads_( cbData )           PCBYTE pbSrc,
+        _Out_writes_( cbData )          PBYTE pbDst,
                                         SIZE_T cbData );
 
     BlockCipherImpState< Implementation, Algorithm, Mode > state;
@@ -723,22 +1423,40 @@ public:
     static const String s_algName;
     static const String s_modeName;
     static const String s_impName;
-    
-    virtual NTSTATUS setKey( PCBYTE pbKey, SIZE_T cbKey );
 
-    virtual VOID encrypt( 
+    virtual NTSTATUS setKey( PCBYTE pbKey, SIZE_T cbKey, UINT32 flags );
+
+    virtual NTSTATUS encrypt(
                                         SIZE_T      cbDataUnit,
                                         ULONGLONG   tweak,
-        _In_reads_( cbData )            PCBYTE      pbSrc, 
-        _Out_writes_( cbData )          PBYTE       pbDst, 
+        _In_reads_( cbData )            PCBYTE      pbSrc,
+        _Out_writes_( cbData )          PBYTE       pbDst,
                                         SIZE_T      cbData );
+        // Return zero if success, NT status error if not supported.
 
-    virtual VOID decrypt( 
+    virtual NTSTATUS decrypt(
                                         SIZE_T      cbDataUnit,
                                         ULONGLONG   tweak,
-        _In_reads_( cbData )            PCBYTE      pbSrc, 
-        _Out_writes_( cbData )          PBYTE       pbDst, 
+        _In_reads_( cbData )            PCBYTE      pbSrc,
+        _Out_writes_( cbData )          PBYTE       pbDst,
                                         SIZE_T      cbData );
+        // Return zero if success, NT status error if not supported.
+
+    virtual NTSTATUS encryptWith128bTweak(
+                                                SIZE_T  cbDataUnit,
+        _In_reads_( SYMCRYPT_AES_BLOCK_SIZE )   PCBYTE  pbTweak,
+        _In_reads_( cbData )                    PCBYTE  pbSrc,
+        _Out_writes_( cbData )                  PBYTE   pbDst,
+                                                SIZE_T  cbData );
+        // Return zero if success, NT status error if not supported.
+
+    virtual NTSTATUS decryptWith128bTweak(
+                                                SIZE_T  cbDataUnit,
+        _In_reads_( SYMCRYPT_AES_BLOCK_SIZE )   PCBYTE  pbTweak,
+        _In_reads_( cbData )                    PCBYTE  pbSrc,
+        _Out_writes_( cbData )                  PBYTE   pbDst,
+                                                SIZE_T  cbData );
+        // Return zero if success, NT status error if not supported.
 
     XtsImpState< Implementation, Algorithm > state;
 };
@@ -782,7 +1500,7 @@ public:
     static const String s_algName;
     static const String s_modeName;
     static const String s_impName;
-    
+
     virtual std::set<SIZE_T> getNonceSizes();
 
     virtual std::set<SIZE_T> getTagSizes();
@@ -793,28 +1511,28 @@ public:
 
     virtual VOID setTotalCbData( SIZE_T cbData );
 
-    virtual NTSTATUS encrypt(   
-        _In_reads_( cbNonce )       PCBYTE  pbNonce,      
-                                    SIZE_T  cbNonce, 
-        _In_reads_( cbAuthData )    PCBYTE  pbAuthData, 
-                                    SIZE_T  cbAuthData, 
-        _In_reads_( cbData )        PCBYTE  pbSrc, 
-        _Out_writes_( cbData )      PBYTE   pbDst, 
+    virtual NTSTATUS encrypt(
+        _In_reads_( cbNonce )       PCBYTE  pbNonce,
+                                    SIZE_T  cbNonce,
+        _In_reads_( cbAuthData )    PCBYTE  pbAuthData,
+                                    SIZE_T  cbAuthData,
+        _In_reads_( cbData )        PCBYTE  pbSrc,
+        _Out_writes_( cbData )      PBYTE   pbDst,
                                     SIZE_T  cbData,
-        _Out_writes_( cbTag )       PBYTE   pbTag, 
+        _Out_writes_( cbTag )       PBYTE   pbTag,
                                     SIZE_T  cbTag,
                                     ULONG   flags );
         // returns an error only if the request is not supported; only allowed for partial requests.
 
-    virtual NTSTATUS decrypt(   
-        _In_reads_( cbNonce )       PCBYTE  pbNonce,      
-                                    SIZE_T  cbNonce, 
-        _In_reads_( cbAuthData )    PCBYTE  pbAuthData, 
-                                    SIZE_T  cbAuthData, 
-        _In_reads_( cbData )        PCBYTE  pbSrc, 
-        _Out_writes_( cbData )      PBYTE   pbDst, 
+    virtual NTSTATUS decrypt(
+        _In_reads_( cbNonce )       PCBYTE  pbNonce,
+                                    SIZE_T  cbNonce,
+        _In_reads_( cbAuthData )    PCBYTE  pbAuthData,
+                                    SIZE_T  cbAuthData,
+        _In_reads_( cbData )        PCBYTE  pbSrc,
+        _Out_writes_( cbData )      PBYTE   pbDst,
                                     SIZE_T  cbData,
-        _In_reads_( cbTag )         PCBYTE  pbTag, 
+        _In_reads_( cbTag )         PCBYTE  pbTag,
                                     SIZE_T  cbTag,
                                     ULONG   flags );
         // returns STATUS_AUTH_TAG_MISMATCH if the tag is wrong.
@@ -824,6 +1542,48 @@ public:
 
 };
 
+template< class Implementation, class Algorithm > class KeyWrapImpState;
+
+template< class Implementation, class Algorithm >
+class KeyWrapImp: public KeyWrapImplementation
+{
+public:
+    KeyWrapImp();
+    virtual ~KeyWrapImp();
+
+private:
+    KeyWrapImp( const KeyWrapImp & );
+    VOID operator=( const KeyWrapImp & );
+
+public:
+    static const String s_algName;
+    static const String s_modeName;
+    static const String s_impName;
+
+    virtual SIZE_T getMinPlaintextSize();
+    virtual SIZE_T getMaxPlaintextSize();
+    virtual SIZE_T getPlaintextSizeIncrement();
+    virtual std::set<SIZE_T> getKeySizes();
+
+    virtual NTSTATUS setKey( PCBYTE pbKey, SIZE_T cbKey );
+
+    virtual NTSTATUS encrypt(
+        _In_reads_(cbSrc)                   PCBYTE  pbSrc,
+                                            SIZE_T  cbSrc,
+        _Out_writes_to_(cbDst, *pcbResult)  PBYTE   pbDst,
+                                            SIZE_T  cbDst,
+                                            SIZE_T* pcbResult );
+
+    virtual NTSTATUS decrypt(
+        _In_reads_(cbSrc)                   PCBYTE  pbSrc,
+                                            SIZE_T  cbSrc,
+        _Out_writes_to_(cbDst, *pcbResult)  PBYTE   pbDst,
+                                            SIZE_T  cbDst,
+                                            SIZE_T* pcbResult );
+
+    KeyWrapImpState< Implementation, Algorithm > state;
+
+};
 
 template< class Implementation, class Algorithm> class StreamCipherImpState;
 
@@ -843,22 +1603,22 @@ public:
     static const String s_modeName;
     static const String s_algName;
     static const BOOL   s_isRandomAccess;
-    
+
     virtual std::set<SIZE_T> getNonceSizes();
 
     virtual std::set<SIZE_T> getKeySizes();
 
     virtual NTSTATUS setKey( _In_reads_( cbKey ) PCBYTE pbKey, SIZE_T cbKey );
 
-    virtual NTSTATUS setNonce( _In_reads_( cbKey ) PCBYTE pbNonce, SIZE_T cbNonce );
+    virtual NTSTATUS setNonce( _In_reads_( cbNonce ) PCBYTE pbNonce, SIZE_T cbNonce );
 
     virtual BOOL isRandomAccess() { return s_isRandomAccess; };
 
     virtual VOID setOffset( UINT64 offset );
 
-    virtual VOID encrypt( 
-        _In_reads_( cbData )    PCBYTE  pbSrc, 
-        _Out_writes_( cbData )  PBYTE   pbDst, 
+    virtual VOID encrypt(
+        _In_reads_( cbData )    PCBYTE  pbSrc,
+        _Out_writes_( cbData )  PBYTE   pbDst,
                                 SIZE_T  cbData );
 
     StreamCipherImpState< Implementation, Algorithm> state;
@@ -882,7 +1642,7 @@ public:
     static const String s_impName;
     static const String s_modeName;
     static const String s_algName;
-    
+
     virtual NTSTATUS instantiate( _In_reads_( cbEntropy ) PCBYTE pbEntropy, SIZE_T cbEntropy ) ;
     virtual NTSTATUS reseed( _In_reads_( cbEntropy ) PCBYTE pbEntropy, SIZE_T cbEntropy );
     virtual VOID generate( _Out_writes_( cbData ) PBYTE pbData, SIZE_T cbData );
@@ -907,18 +1667,18 @@ public:
     static const String s_impName;
     static const String s_modeName;
     static const String s_algName;
-    
-    virtual VOID derive( 
+
+    virtual VOID derive(
         _In_reads_( cbKey )     PCBYTE          pbKey,
                                 SIZE_T          cbKey,
         _In_                    PKDF_ARGUMENTS  args,
-        _Out_writes_( cbDst )   PBYTE           pbDst, 
+        _Out_writes_( cbDst )   PBYTE           pbDst,
                                 SIZE_T          cbDst );
 
     KdfImpState<Implementation,Algorithm,BaseAlg> state;
 };
 
-template< class Implementation, class Algorithm > 
+template< class Implementation, class Algorithm >
 class TlsCbcHmacImp: public TlsCbcHmacImplementation
 {
 public:
@@ -961,6 +1721,7 @@ public:
     static const String s_algName;
 };
 
+/*
 template< class Implementation, class Algorithm>
 class RsaImp: public RsaImplementation
 {
@@ -977,6 +1738,7 @@ public:
     static const String s_modeName;
     static const String s_algName;
 };
+*/
 
 template< class Implementation, class Algorithm>
 class DlImp: public DlImplementation
@@ -993,6 +1755,154 @@ public:
     static const String s_impName;
     static const String s_modeName;
     static const String s_algName;
+};
+
+template< class Implementation, class Algorithm > class RsaSignImpState;
+
+template< class Implementation, class Algorithm>
+class RsaSignImp: public RsaSignImplementation
+{
+public:
+    RsaSignImp();
+    virtual ~RsaSignImp();
+
+private:
+    RsaSignImp( const RsaSignImp & );
+    VOID operator=( const RsaSignImp & );
+
+public:
+    static const String s_algName;             // Algorithm name
+    static const String s_modeName;
+    static const String s_impName;             // Implementation name
+
+    virtual NTSTATUS setKey( PCRSAKEY_TESTBLOB pcKeyBlob );
+
+    virtual NTSTATUS sign(
+        _In_reads_( cbHash)     PCBYTE  pbHash,
+                                SIZE_T  cbHash,
+                                PCSTR   pcstrHashAlgName,
+                                UINT32  u32Other,
+        _Out_writes_( cbSig )   PBYTE   pbSig,
+                                SIZE_T  cbSig );
+
+    virtual NTSTATUS verify(
+        _In_reads_( cbHash)     PCBYTE  pbHash,
+                                SIZE_T  cbHash,
+        _In_reads_( cbSig )     PCBYTE  pbSig,
+                                SIZE_T  cbSig,
+                                PCSTR   pcstrHashAlgName,
+                                UINT32  u32Other );
+
+    RsaSignImpState<Implementation,Algorithm> state;
+};
+
+
+
+template< class Implementation, class Algorithm > class RsaEncImpState;
+
+template< class Implementation, class Algorithm>
+class RsaEncImp: public RsaEncImplementation
+{
+public:
+    RsaEncImp();
+    virtual ~RsaEncImp();
+
+private:
+    RsaEncImp( const RsaEncImp & );
+    VOID operator=( const RsaEncImp & );
+
+public:
+    static const String s_algName;             // Algorithm name
+    static const String s_modeName;
+    static const String s_impName;             // Implementation name
+
+    virtual NTSTATUS setKey( PCRSAKEY_TESTBLOB pcKeyBlob );
+
+    virtual NTSTATUS encrypt(
+        _In_reads_( cbMsg )             PCBYTE  pbMsg,
+                                        SIZE_T  cbMsg,
+                                        PCSTR   pcstrHashAlgName,
+                                        PCBYTE  pbLabel,
+                                        SIZE_T  cbLabel,
+        _Out_writes_( cbCiphertext )    PBYTE   pbCiphertext,
+                                        SIZE_T  cbCiphertext );        // == cbModulus of key
+
+    virtual NTSTATUS decrypt(
+        _In_reads_( cbCiphertext )      PCBYTE  pbCiphertext,
+                                        SIZE_T  cbCiphertext,
+                                        PCSTR   pcstrHashAlgName,
+                                        PCBYTE  pbLabel,
+                                        SIZE_T  cbLabel,
+        _Out_writes_to_(cbMsg,*pcbMsg)  PBYTE   pbMsg,
+                                        SIZE_T  cbMsg,
+                                        SIZE_T *pcbMsg );
+
+    RsaEncImpState<Implementation,Algorithm> state;
+};
+
+template< class Implementation, class Algorithm > class DhImpState;
+
+template< class Implementation, class Algorithm>
+class DhImp: public DhImplementation
+{
+public:
+    DhImp();
+    virtual ~DhImp();
+
+private:
+    DhImp( const DhImp & );
+    VOID operator=( const DhImp & );
+
+public:
+    static const String s_algName;             // Algorithm name
+    static const String s_modeName;
+    static const String s_impName;             // Implementation name
+
+    virtual NTSTATUS setKey(
+        _In_    PCDLKEY_TESTBLOB    pcKeyBlob );
+
+    virtual NTSTATUS sharedSecret(
+        _In_                        PCDLKEY_TESTBLOB    pcPubkey,
+        _Out_writes_( cbSecret )    PBYTE               pbSecret,
+                                    SIZE_T              cbSecret );
+
+    DhImpState<Implementation,Algorithm> state;
+};
+
+template< class Implementation, class Algorithm > class DsaImpState;
+
+template< class Implementation, class Algorithm>
+class DsaImp: public DsaImplementation
+{
+public:
+    DsaImp();
+    virtual ~DsaImp();
+
+private:
+    DsaImp( const DsaImp & );
+    VOID operator=( const DsaImp & );
+
+public:
+    static const String s_algName;             // Algorithm name
+    static const String s_modeName;
+    static const String s_impName;             // Implementation name
+
+    virtual NTSTATUS setKey(
+        _In_    PCDLKEY_TESTBLOB    pcKeyBlob ); // Returns an error if this key can't be handled.
+
+    virtual NTSTATUS sign(
+        _In_reads_( cbHash)     PCBYTE  pbHash,
+                                SIZE_T  cbHash,             // Can be any size, but often = size of Q
+        _Out_writes_( cbSig )   PBYTE   pbSig,
+                                SIZE_T  cbSig );        // cbSig == cbModulus of group
+
+    virtual NTSTATUS verify(
+        _In_reads_( cbHash)     PCBYTE  pbHash,
+                                SIZE_T  cbHash,
+        _In_reads_( cbSig )     PCBYTE  pbSig,
+                                SIZE_T  cbSig );
+
+    DsaImpState<Implementation,Algorithm> state;
 };
 
 template< class Implementation, class Algorithm>
@@ -1012,6 +1922,252 @@ public:
     static const String s_algName;
 };
 
+class KemImplementation : public AlgorithmImplementation
+{
+public:
+    KemImplementation() {};
+    virtual ~KemImplementation() {};
+
+private:
+    KemImplementation( const KemImplementation & );
+    VOID operator=( const KemImplementation & );
+
+public:
+    virtual NTSTATUS setKeyFromTestBlob(
+        _In_reads_bytes_( cbTestKeyBlob )       PCBYTE              pcbTestKeyBlob,
+                                                SIZE_T              cbTestKeyBlob,
+                                                BOOL                canDecapsulate ) = 0;
+
+    virtual NTSTATUS getBlobFromKey(
+                                                UINT32              blobType,
+        _Out_writes_bytes_( cbBlob )            PBYTE               pbBlob,
+                                                SIZE_T              cbBlob ) = 0;
+
+    virtual NTSTATUS encapsulate(
+        _Out_writes_bytes_( cbAgreedSecret )    PBYTE               pbAgreedSecret,
+                                                SIZE_T              cbAgreedSecret, 
+        _Out_writes_bytes_( cbCiphertext )      PBYTE               pbCiphertext,
+                                                SIZE_T              cbCiphertext ) = 0;
+
+    virtual NTSTATUS encapsulateEx(
+        _In_reads_bytes_( cbRandom )            PCBYTE              pbRandom,
+                                                SIZE_T              cbRandom,
+        _Out_writes_bytes_( cbAgreedSecret )    PBYTE               pbAgreedSecret,
+                                                SIZE_T              cbAgreedSecret, 
+        _Out_writes_bytes_( cbCiphertext )      PBYTE               pbCiphertext,
+                                                SIZE_T              cbCiphertext ) = 0;
+
+    virtual NTSTATUS decapsulate(
+        _In_reads_bytes_( cbCiphertext )        PCBYTE              pbCiphertext,
+                                                SIZE_T              cbCiphertext,
+        _Out_writes_bytes_( cbAgreedSecret )    PBYTE               pbAgreedSecret,
+                                                SIZE_T              cbAgreedSecret ) = 0;
+};
+
+// Currently maximum key blob size is ML-KEM1024 decapsulation key blob
+#define MAX_MLKEMKEY_BLOB_SIZE (3168)
+
+typedef struct _MLKEMKEY_TESTBLOB
+{
+    SYMCRYPT_MLKEM_PARAMS params;               // represents the parameter set of ML-KEM
+    SYMCRYPT_MLKEMKEY_FORMAT format;            // represents the format of the ML-KEM key blob
+    BYTE    abKeyBlob[MAX_MLKEMKEY_BLOB_SIZE];  // byte blob representing an ML-KEM key
+    SIZE_T  cbKeyBlob;
+} MLKEMKEY_TESTBLOB, *PMLKEMKEY_TESTBLOB;
+typedef const MLKEMKEY_TESTBLOB * PCMLKEMKEY_TESTBLOB;
+
+template< class Implementation, class Algorithm > class KemImpState;
+
+template< class Implementation, class Algorithm >
+class KemImp : public KemImplementation
+{
+public:
+    KemImp();
+    virtual ~KemImp();
+
+private:
+    KemImp( const KemImp & );
+    VOID operator=( const KemImp & );
+
+public:
+    static const String s_algName;             // Algorithm name
+    static const String s_modeName;
+    static const String s_impName;             // Implementation name
+
+    virtual NTSTATUS setKeyFromTestBlob(
+        _In_reads_bytes_( cbTestKeyBlob )       PCBYTE              pcbTestKeyBlob,
+                                                SIZE_T              cbTestKeyBlob,
+                                                BOOL                canDecapsulate );
+
+    virtual NTSTATUS getBlobFromKey(
+                                                UINT32              blobType,
+        _Out_writes_bytes_( cbBlob )            PBYTE               pbBlob,
+                                                SIZE_T              cbBlob );
+
+    virtual NTSTATUS encapsulate(
+        _Out_writes_bytes_( cbAgreedSecret )    PBYTE               pbAgreedSecret,
+                                                SIZE_T              cbAgreedSecret, 
+        _Out_writes_bytes_( cbCiphertext )      PBYTE               pbCiphertext,
+                                                SIZE_T              cbCiphertext );
+
+    virtual NTSTATUS encapsulateEx(
+        _In_reads_bytes_( cbRandom )            PCBYTE              pbRandom,
+                                                SIZE_T              cbRandom,
+        _Out_writes_bytes_( cbAgreedSecret )    PBYTE               pbAgreedSecret,
+                                                SIZE_T              cbAgreedSecret, 
+        _Out_writes_bytes_( cbCiphertext )      PBYTE               pbCiphertext,
+                                                SIZE_T              cbCiphertext );
+
+    virtual NTSTATUS decapsulate(
+        _In_reads_bytes_( cbCiphertext )        PCBYTE              pbCiphertext,
+                                                SIZE_T              cbCiphertext,
+        _Out_writes_bytes_( cbAgreedSecret )    PBYTE               pbAgreedSecret,
+                                                SIZE_T              cbAgreedSecret );
+
+    KemImpState<Implementation,Algorithm> state;
+};
+
+// Hash-Based Signatures
+class HbsImplementation : public AlgorithmImplementation
+{
+public:
+    HbsImplementation() {};
+    virtual ~HbsImplementation() {};
+
+private:
+    HbsImplementation(const HbsImplementation&);
+    VOID operator=(const HbsImplementation&);
+
+public:
+
+    virtual NTSTATUS setKey(
+                                UINT32  uAlgId,
+                                UINT32  uOtsAlgId,
+                                BOOL    fMultitree,
+        _In_reads_bytes_(cbSrc) PCBYTE  pbSrc,
+                                SIZE_T  cbSrc,
+                                BOOL    fVerify ) = 0;
+        // Set an XMSS key from algorithm identifier and key blob.
+        //
+        // If fVerify is TRUE then this function computes the public root
+        // from the private key -only if the key is private- and compares
+        // it to the public root that is in the private key.
+
+
+    virtual NTSTATUS sign(
+        _In_reads_bytes_(cbMsg)         PCBYTE  pbMsg,
+                                        SIZE_T  cbMsg,
+        _Out_writes_bytes_(cbSignature) PBYTE   pbSignature,
+                                        SIZE_T  cbSignature ) = 0;
+    // Sign a message using the private key initialized by setKey()
+
+
+    virtual NTSTATUS verify(
+        _In_reads_bytes_(cbMsg)         PCBYTE  pbMsg,
+                                        SIZE_T  cbMsg,
+        _In_reads_bytes_(cbSignature)   PCBYTE  pbSignature,
+                                        SIZE_T  cbSignature ) = 0;
+    // Verify a signature on a message using the private key initialized
+    // by setKey()
+};
+
+
+//
+// A template class to store the state of an XMSS implementation in.
+//
+template<class Implementation, class Algorithm> class XmssImpState;
+
+//
+// Template class for the actual XMSS implementations
+//
+template< class Implementation, class Algorithm >
+class XmssImp : public HbsImplementation
+{
+public:
+    XmssImp();
+    virtual ~XmssImp();
+
+private:
+    XmssImp(const XmssImp&);
+    VOID operator=(const XmssImp&);
+
+public:
+
+    virtual NTSTATUS setKey(
+                                UINT32  uAlgId,
+                                UINT32  uOtsAlgId,
+                                BOOL    fMultitree,
+        _In_reads_bytes_(cbSrc) PCBYTE  pbSrc,
+                                SIZE_T  cbSrc,
+                                BOOL    fVerify );
+
+    virtual NTSTATUS sign(
+        _In_reads_bytes_(cbMsg)         PCBYTE  pbMsg,
+                                        SIZE_T  cbMsg,
+        _Out_writes_bytes_(cbSignature) PBYTE   pbSignature,
+                                        SIZE_T  cbSignature ) ;
+
+    virtual NTSTATUS verify(
+        _In_reads_bytes_(cbMsg)         PCBYTE  pbMsg,
+                                        SIZE_T  cbMsg,
+        _In_reads_bytes_(cbSignature)   PCBYTE  pbSignature,
+                                        SIZE_T  cbSignature );
+
+    static const String s_algName;
+    static const String s_modeName;
+    static const String s_impName;
+
+    XmssImpState<Implementation, Algorithm> state;
+};
+
+
+//
+// A template class to store the state of an LMS implementation in.
+//
+template<class Implementation, class Algorithm> class LmsImpState;
+
+//
+// Template class for the actual LMS implementations
+//
+template< class Implementation, class Algorithm >
+class LmsImp : public HbsImplementation
+{
+public:
+    LmsImp();
+    virtual ~LmsImp();
+
+private:
+    LmsImp(const LmsImp&);
+    VOID operator=(const LmsImp&);
+
+public:
+
+    virtual NTSTATUS setKey(
+                                UINT32  uAlgId,
+                                UINT32  uOtsAlgId,
+                                BOOL    fMultitree,
+        _In_reads_bytes_(cbSrc) PCBYTE  pbSrc,
+                                SIZE_T  cbSrc,
+                                BOOL    fVerify );
+
+    virtual NTSTATUS sign(
+        _In_reads_bytes_(cbMsg)         PCBYTE  pbMsg,
+                                        SIZE_T  cbMsg,
+        _Out_writes_bytes_(cbSignature) PBYTE   pbSignature,
+                                        SIZE_T  cbSignature ) ;
+
+    virtual NTSTATUS verify(
+        _In_reads_bytes_(cbMsg)         PCBYTE  pbMsg,
+                                        SIZE_T  cbMsg,
+        _In_reads_bytes_(cbSignature)   PCBYTE  pbSignature,
+                                        SIZE_T  cbSignature );
+
+    static const String s_algName;
+    static const String s_modeName;
+    static const String s_impName;
+
+    LmsImpState<Implementation, Algorithm> state;
+};
 
 //
 // The stub classes we use to distinguish our implementations and algorithms contain the
@@ -1035,6 +2191,33 @@ const String ParallelHashImp<Implementation,Algorithm>::s_modeName;
 
 template< class Implementation, class Algorithm >
 const String ParallelHashImp<Implementation,Algorithm>::s_impName = Implementation::name;
+
+template< class Implementation, class Algorithm >
+const String XofImp<Implementation,Algorithm>::s_algName = Algorithm::name;
+
+template< class Implementation, class Algorithm >
+const String XofImp<Implementation,Algorithm>::s_modeName;
+
+template< class Implementation, class Algorithm >
+const String XofImp<Implementation,Algorithm>::s_impName = Implementation::name;
+
+template< class Implementation, class Algorithm >
+const String CustomizableXofImp<Implementation,Algorithm>::s_algName = Algorithm::name;
+
+template< class Implementation, class Algorithm >
+const String CustomizableXofImp<Implementation,Algorithm>::s_modeName;
+
+template< class Implementation, class Algorithm >
+const String CustomizableXofImp<Implementation,Algorithm>::s_impName = Implementation::name;
+
+template< class Implementation, class Algorithm >
+const String KmacImp<Implementation,Algorithm>::s_algName = Algorithm::name;
+
+template< class Implementation, class Algorithm >
+const String KmacImp<Implementation,Algorithm>::s_modeName;
+
+template< class Implementation, class Algorithm >
+const String KmacImp<Implementation,Algorithm>::s_impName = Implementation::name;
 
 
 template< class Implementation, class Algorithm >
@@ -1096,6 +2279,13 @@ template< class Implementation, class Algorithm>
 const String XtsImp<Implementation, Algorithm>::s_modeName;
 
 template< class Implementation, class Algorithm>
+const String KeyWrapImp<Implementation, Algorithm>::s_impName = Implementation::name;
+template< class Implementation, class Algorithm>
+const String KeyWrapImp<Implementation, Algorithm>::s_algName = Algorithm::name;
+template< class Implementation, class Algorithm>
+const String KeyWrapImp<Implementation, Algorithm>::s_modeName;
+
+template< class Implementation, class Algorithm>
 const String TlsCbcHmacImp<Implementation, Algorithm>::s_impName = Implementation::name;
 template< class Implementation, class Algorithm>
 const String TlsCbcHmacImp<Implementation, Algorithm>::s_algName = Algorithm::name;
@@ -1109,12 +2299,14 @@ const String ArithImp<Implementation, Algorithm>::s_algName = Algorithm::name;
 template< class Implementation, class Algorithm>
 const String ArithImp<Implementation, Algorithm>::s_modeName;
 
+/*
 template< class Implementation, class Algorithm>
 const String RsaImp<Implementation, Algorithm>::s_impName = Implementation::name;
 template< class Implementation, class Algorithm>
 const String RsaImp<Implementation, Algorithm>::s_algName = Algorithm::name;
 template< class Implementation, class Algorithm>
 const String RsaImp<Implementation, Algorithm>::s_modeName;
+*/
 
 template< class Implementation, class Algorithm>
 const String DlImp<Implementation, Algorithm>::s_impName = Implementation::name;
@@ -1129,6 +2321,66 @@ template< class Implementation, class Algorithm>
 const String EccImp<Implementation, Algorithm>::s_algName = Algorithm::name;
 template< class Implementation, class Algorithm>
 const String EccImp<Implementation, Algorithm>::s_modeName;
+
+template< class Imp, class Alg>
+const String RsaSignImp<Imp,Alg>::s_impName = Imp::name;
+template< class Imp, class Alg>
+const String RsaSignImp<Imp,Alg>::s_algName = Alg::name;
+template< class Imp, class Alg>
+const String RsaSignImp<Imp,Alg>::s_modeName;
+
+template< class Imp, class Alg>
+const String RsaEncImp<Imp,Alg>::s_impName = Imp::name;
+template< class Imp, class Alg>
+const String RsaEncImp<Imp,Alg>::s_algName = Alg::name;
+template< class Imp, class Alg>
+const String RsaEncImp<Imp,Alg>::s_modeName;
+
+template< class Imp, class Alg>
+const String DhImp<Imp,Alg>::s_impName = Imp::name;
+template< class Imp, class Alg>
+const String DhImp<Imp,Alg>::s_algName = Alg::name;
+template< class Imp, class Alg>
+const String DhImp<Imp,Alg>::s_modeName;
+
+template< class Imp, class Alg>
+const String DsaImp<Imp,Alg>::s_impName = Imp::name;
+template< class Imp, class Alg>
+const String DsaImp<Imp,Alg>::s_algName = Alg::name;
+template< class Imp, class Alg>
+const String DsaImp<Imp,Alg>::s_modeName;
+
+template< class Implementation, class Algorithm >
+const String XmssImp<Implementation,Algorithm>::s_algName = Algorithm::name;
+
+template< class Implementation, class Algorithm >
+const String XmssImp<Implementation,Algorithm>::s_modeName;
+
+template< class Implementation, class Algorithm >
+const String XmssImp<Implementation,Algorithm>::s_impName = Implementation::name;
+
+template< class Implementation, class Algorithm >
+const String LmsImp<Implementation,Algorithm>::s_algName = Algorithm::name;
+
+template< class Implementation, class Algorithm >
+const String LmsImp<Implementation,Algorithm>::s_modeName;
+
+template< class Implementation, class Algorithm >
+const String LmsImp<Implementation,Algorithm>::s_impName = Implementation::name;
+
+template< class Imp, class Alg>
+const String KemImp<Imp,Alg>::s_impName = Imp::name;
+template< class Imp, class Alg>
+const String KemImp<Imp,Alg>::s_algName = Alg::name;
+template< class Imp, class Alg>
+const String KemImp<Imp,Alg>::s_modeName;
+
+template< class Imp, class Alg>
+const String PqDsaImp<Imp,Alg>::s_impName = Imp::name;
+template< class Imp, class Alg>
+const String PqDsaImp<Imp,Alg>::s_algName = Alg::name;
+template< class Imp, class Alg>
+const String PqDsaImp<Imp,Alg>::s_modeName;
 
 //
 // Template declaration for performance functions (for those implementations that wish to use them)

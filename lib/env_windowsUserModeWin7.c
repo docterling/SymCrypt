@@ -5,7 +5,14 @@
 // Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
-#include "precomp.h"
+// #include "precomp.h"
+
+#pragma warning(push)
+#pragma warning(disable: 5103) // Arm64's wdm.h included below currently generate a lot of 5103 warnings
+#include <Windows.h>
+#pragma warning(pop)
+#include "symcrypt.h"
+#include "sc_lib.h"
 
 SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvWindowsUsermodeWin7nLater()
 {
@@ -33,7 +40,7 @@ SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvWindowsUse
 
 VOID
 SYMCRYPT_CALL
-SymCryptInitEnvWindowsUsermodeWin7nLater()
+SymCryptInitEnvWindowsUsermodeWin7nLater( UINT32 version )
 {
 
     if( g_SymCryptFlags & SYMCRYPT_FLAG_LIB_INITIALIZED )
@@ -64,7 +71,7 @@ SymCryptInitEnvWindowsUsermodeWin7nLater()
 
 #endif    
 
-    SymCryptInitEnvCommon();
+    SymCryptInitEnvCommon( version );
 }
 
 _Analysis_noreturn_

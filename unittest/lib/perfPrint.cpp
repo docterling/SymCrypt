@@ -2,14 +2,14 @@
 // PerfPrint.cpp
 // Printing output without affecting performance measurements
 //
-// Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
+// Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
 #include "precomp.h"
 
 
 //
-// We don't want to print while we are still running tests, as the 
+// We don't want to print while we are still running tests, as the
 // console updates trigger other threads in the system to start doing work.
 // This module allows us to print output without disturbing the performance measurements.
 //
@@ -32,10 +32,19 @@ print( const char *format, ...)
 
     va_start( vl, format );
 
+    // TODO: We should use CHECK here but CHECK will re-enter this function via fatal()
+    // so we should fix fatal to use fprintf instead of buffering to Output.
+    if ( OutputOffset >= MAX_OUTPUT_SIZE )
+    {
+        fputs( "Out of output buffer space.\n", stderr );
+        exit(-1);
+    }
+
+    // TODO: We should also replace compiler dependent VSNPRINTF_S with std::vsnprintf.
     res = VSNPRINTF_S( &Output[OutputOffset], MAX_OUTPUT_SIZE - OutputOffset, _TRUNCATE, format, vl );
-    
+
     CHECK( res >= 0 , "WHOA!!!" );
-    
+
     OutputOffset += res;
 }
 
@@ -60,6 +69,11 @@ formatNumber( double v )
         return "-" + formatNumber( -v );
     }
 
+    if( isnan(v) )
+    {
+        return "NAN  ";
+    }
+
     CHECK3( v < 1e24, "Number too large %f", v );
 
     bool fSmallInt = floor(v) == v && v < 10000;
@@ -73,10 +87,14 @@ formatNumber( double v )
             s++;
         }
     }
-    
+
     // there doesn't seem to be a way to do a fixed-size result with the format specifiers
     // Our output is always 5 characters long
-    if( v < 10 && !fSmallInt )
+    if( v < 1 && !fSmallInt )
+    {
+        SNPRINTF_S( buf1, sizeof( buf1 ), _TRUNCATE, ".%03d",
+            (int) ( 1000.0 * v) );
+    } else if( v < 10 && !fSmallInt )
     {
         SNPRINTF_S( buf1, sizeof( buf1 ), _TRUNCATE, "%1d.%02d",
             (int)floor(v), (int) ( 100.0 * fmod( v, 1 ) ) );
@@ -108,10 +126,16 @@ iprint( const char *format, ...)
 
     va_start( vl, format );
 
+    if ( OutputOffset >= MAX_OUTPUT_SIZE )
+    {
+        fputs( "Out of output buffer space.\n", stderr );
+        exit(-1);
+    }
+
     res = VSNPRINTF_S( &Output[OutputOffset], MAX_OUTPUT_SIZE - OutputOffset, _TRUNCATE, format, vl );
-    
+
     CHECK( res >= 0 , "WHOA!!!" );
-    
+
     OutputOffset += res;
     printOutput( 0 );
 }
@@ -125,10 +149,16 @@ dprint( const char * format, ... )
 
     va_start( vl, format );
 
+    if ( OutputOffset >= MAX_OUTPUT_SIZE )
+    {
+        fputs( "Out of output buffer space.\n", stderr );
+        exit(-1);
+    }
+
     res = _vsnprintf_s( &Output[OutputOffset], MAX_OUTPUT_SIZE - OutputOffset, _TRUNCATE, format, vl );
-    
+
     CHECK( res >= 0 , "WHOA!!!" );
-    
+
     OutputOffset += res;
     printOutput( 0 );
 #else
@@ -136,7 +166,7 @@ dprint( const char * format, ... )
 #endif
 }
 
-VOID printOutput( int delayMilliSeconds ) 
+VOID printOutput( int delayMilliSeconds )
 {
     Output[MAX_OUTPUT_SIZE-1] = 0;
     fputs( Output, stdout );
@@ -154,6 +184,12 @@ vprint(BOOL bPrint, const char *format, ...)
     if (bPrint)
     {
         va_start( vl, format );
+
+        if ( OutputOffset >= MAX_OUTPUT_SIZE )
+        {
+            fputs( "Out of output buffer space.\n", stderr );
+            exit(-1);
+        }
 
         res = VSNPRINTF_S( &Output[OutputOffset], MAX_OUTPUT_SIZE - OutputOffset, _TRUNCATE, format, vl );
 

@@ -8,7 +8,7 @@
 
 //
 // The SymCrypt API allows callers to use the generic block cipher mode functions and pass
-// a pionter to a structure that describes the block cipher.
+// a pointer to a structure that describes the block cipher.
 // This structure contains pointers to all the optimized implementations of the various modes.
 // This pulls in all the mode-specific code, which in some cases we don't want.
 //
@@ -18,12 +18,12 @@
 
 //
 // The virtual table for the AES block cipher.
-// 
+//
 // All pointers must point to specialized functions. The general
 // block cipher mode functions will call these pointers if they are non-NULL
 // so if they point back to an implementation that calls the generic
 // mode functions we get an infinite recursion.
-// 
+//
 // NOTE: the compile-time conditions in this file should track the actual implementations in
 // aes-default.c.
 //
@@ -52,12 +52,12 @@ const SYMCRYPT_BLOCKCIPHER SymCryptAesBlockCipher_Fast = {
 #endif
 
 #if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_ARM | SYMCRYPT_CPU_ARM64
-    &SymCryptAesCbcDecrypt,                  
+    &SymCryptAesCbcDecrypt,
 #else
     NULL,
 #endif
 
-#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
+#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_ARM64
     &SymCryptAesCbcMac,
 #else
     NULL,
@@ -66,13 +66,22 @@ const SYMCRYPT_BLOCKCIPHER SymCryptAesBlockCipher_Fast = {
 #if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_ARM | SYMCRYPT_CPU_ARM64
     &SymCryptAesCtrMsb64,
 #else
-    NULL,                
-#endif 
+    NULL,
+#endif
 
-    NULL,                   // PSYMCRYPT_BLOCKCIPHER_CRYPT_XTS     xtsEncFunc;
-    NULL,                   // PSYMCRYPT_BLOCKCIPHER_CRYPT_XTS     xtsDecFunc;
+#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_ARM | SYMCRYPT_CPU_ARM64
+    &SymCryptAesGcmEncryptPart,
+#else
+    NULL,
+#endif
 
-    SYMCRYPT_AES_BLOCK_SIZE,         
+#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_ARM | SYMCRYPT_CPU_ARM64
+    &SymCryptAesGcmDecryptPart,
+#else
+    NULL,
+#endif
+
+    SYMCRYPT_AES_BLOCK_SIZE,
     sizeof( SYMCRYPT_AES_EXPANDED_KEY ),
 };
 

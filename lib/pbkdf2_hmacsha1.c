@@ -6,10 +6,9 @@
 
 #include "precomp.h"
 
-
 //
 // The PBKDF SHA-1 test 
-// This is in a separate module to avoid pullingin SHA-1 whenever we use PBKDF-SHA-256
+// This is in a separate module to avoid pulling in SHA-1 whenever we use PBKDF
 //
 
 static const UINT64 pbkdf2_IterationCnt = 5;
@@ -21,7 +20,7 @@ static const BYTE    pbkdf2_sha1Answer[] =
 
 VOID
 SYMCRYPT_CALL
-SymCryptPbkdf2_HmacSha1SelfTest()
+SymCryptPbkdf2_HmacSha1SelfTest(void)
 {
     BYTE    res[sizeof(pbkdf2_sha1Answer)];
     

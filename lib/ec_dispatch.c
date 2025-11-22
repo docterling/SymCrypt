@@ -8,7 +8,7 @@
 #include "precomp.h"
 
 // Table with all the pointers to SYMCRYPT_ECURVE_FUNCTIONS
-const SYMCRYPT_ECURVE_FUNCTIONS SymCryptEcurveAllFunctionPointers[] = 
+const SYMCRYPT_ECURVE_FUNCTIONS SymCryptEcurveDispatchTable[] =
 {
     // NULL Type
     {
@@ -60,7 +60,7 @@ const SYMCRYPT_ECURVE_FUNCTIONS SymCryptEcurveAllFunctionPointers[] =
         NULL,       // SymCryptEcpointSetZeroNotImplemented,
         SymCryptMontgomerySetDistinguished,
         SymCryptEcpointGenericSetRandom,
-        NULL,       // SymCryptEcpointIsEqualNotImplemented,
+        SymCryptMontgomeryIsEqual,
         SymCryptMontgomeryIsZero,
         NULL,       // SymCryptEcpointOnCurveNotImplemented,
         NULL,       // SymCryptEcpointAddNotImplemented,
@@ -70,7 +70,44 @@ const SYMCRYPT_ECURVE_FUNCTIONS SymCryptEcurveAllFunctionPointers[] =
         SymCryptMontgomeryPointScalarMul,
         NULL,       // SymCryptEcpointMultiScalarMulNotImplemented,
     },
+    // Short Weierstrass with A==-3
+    {
+        SymCryptShortWeierstrassSetZero,
+        SymCryptShortWeierstrassSetDistinguished,
+        SymCryptEcpointGenericSetRandom,
+        SymCryptShortWeierstrassIsEqual,
+        SymCryptShortWeierstrassIsZero,
+        SymCryptShortWeierstrassOnCurve,
+        SymCryptShortWeierstrassAdd,
+        SymCryptShortWeierstrassAddDiffNonZero,
+        SymCryptShortWeierstrassDoubleSpecializedAm3,
+        SymCryptShortWeierstrassNegate,
+        SymCryptEcpointScalarMulFixedWindow,
+        SymCryptEcpointMultiScalarMulWnafWithInterleaving,
+    },
+    // Slack to make dispatch table size a power of 2
+    {NULL,},
+    {NULL,},
+    {NULL,},
 };
+
+#define SYMCRYPT_ECURVE_DISPATCH_TABLE_SIZE (sizeof( SymCryptEcurveDispatchTable ))
+
+// Ensure the table size is a power of 2
+C_ASSERT( (SYMCRYPT_ECURVE_DISPATCH_TABLE_SIZE & (SYMCRYPT_ECURVE_DISPATCH_TABLE_SIZE - 1)) == 0 );
+
+// For now the ECurve type encodes the index into this dispatch table, so we just mask by the size of the table
+//
+// We could instead encode the absolute offset into the table in the type field (similar to the Modulus dispatch table),
+// and this mask would be multiplied by SYMCRYPT_ECURVE_FUNCTIONS_SIZE
+#define SYMCRYPT_ECURVE_DISPATCH_TABLE_MASK ((SYMCRYPT_ECURVE_DISPATCH_TABLE_SIZE / SYMCRYPT_ECURVE_FUNCTIONS_SIZE)-1)
+
+// We mask to constrain the unpredictable behaviour in the case of memory corruption; we do not want to interpret some data
+// beyond the end of the dispatch table as function pointers
+#define SYMCRYPT_ECURVE_CALL(v) (SymCryptEcurveDispatchTable[SYMCRYPT_FORCE_READ32(&(v)->type) & SYMCRYPT_ECURVE_DISPATCH_TABLE_MASK]).
+
+// We read the curve's internal type with a 32b read so it must be 4 bytes large
+C_ASSERT(sizeof(((PCSYMCRYPT_ECURVE)0)->type) == 4);
 
 // Main functions
 SYMCRYPT_DISABLE_CFG
@@ -79,11 +116,11 @@ SYMCRYPT_CALL
 SymCryptEcpointSetZero(
     _In_    PCSYMCRYPT_ECURVE   pCurve,
     _Out_   PSYMCRYPT_ECPOINT   poDst,
-    _Out_writes_bytes_opt_( cbScratch ) 
+    _Out_writes_bytes_opt_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
-    SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].setZeroFunc( pCurve, poDst, pbScratch, cbScratch );
+    SYMCRYPT_ECURVE_CALL( pCurve ) setZeroFunc( pCurve, poDst, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
@@ -92,11 +129,11 @@ SYMCRYPT_CALL
 SymCryptEcpointSetDistinguishedPoint(
     _In_    PCSYMCRYPT_ECURVE   pCurve,
     _Out_   PSYMCRYPT_ECPOINT   poDst,
-    _Out_writes_bytes_opt_( cbScratch ) 
+    _Out_writes_bytes_opt_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
-    SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].setDistinguishedFunc( pCurve, poDst, pbScratch, cbScratch );
+    SYMCRYPT_ECURVE_CALL( pCurve ) setDistinguishedFunc( pCurve, poDst, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
@@ -106,11 +143,11 @@ SymCryptEcpointSetRandom(
     _In_    PCSYMCRYPT_ECURVE       pCurve,
     _Out_   PSYMCRYPT_INT           piScalar,
     _Out_   PSYMCRYPT_ECPOINT       poDst,
-    _Out_writes_bytes_opt_( cbScratch ) 
+    _Out_writes_bytes_opt_( cbScratch )
             PBYTE                   pbScratch,
             SIZE_T                  cbScratch )
 {
-    SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].setRandomFunc( pCurve, piScalar, poDst, pbScratch, cbScratch );
+    SYMCRYPT_ECURVE_CALL( pCurve ) setRandomFunc( pCurve, piScalar, poDst, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
@@ -121,11 +158,11 @@ SymCryptEcpointIsEqual(
     _In_    PCSYMCRYPT_ECPOINT  poSrc1,
     _In_    PCSYMCRYPT_ECPOINT  poSrc2,
             UINT32              flags,
-    _Out_writes_bytes_opt_( cbScratch ) 
+    _Out_writes_bytes_opt_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
-    return SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].isEqualFunc( pCurve, poSrc1, poSrc2, flags, pbScratch, cbScratch );
+    return SYMCRYPT_ECURVE_CALL( pCurve ) isEqualFunc( pCurve, poSrc1, poSrc2, flags, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
@@ -134,11 +171,11 @@ SYMCRYPT_CALL
 SymCryptEcpointIsZero(
     _In_    PCSYMCRYPT_ECURVE   pCurve,
     _In_    PCSYMCRYPT_ECPOINT  poSrc,
-    _Out_writes_bytes_opt_( cbScratch ) 
+    _Out_writes_bytes_opt_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
-    return SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].isZeroFunc( pCurve, poSrc, pbScratch, cbScratch );
+    return SYMCRYPT_ECURVE_CALL( pCurve ) isZeroFunc( pCurve, poSrc, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
@@ -147,27 +184,27 @@ SYMCRYPT_CALL
 SymCryptEcpointOnCurve(
     _In_    PCSYMCRYPT_ECURVE   pCurve,
     _In_    PCSYMCRYPT_ECPOINT  poSrc,
-    _Out_writes_bytes_opt_( cbScratch ) 
+    _Out_writes_bytes_opt_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
-    return SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].onCurveFunc( pCurve, poSrc, pbScratch, cbScratch );
+    return SYMCRYPT_ECURVE_CALL( pCurve ) onCurveFunc( pCurve, poSrc, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
 VOID
 SYMCRYPT_CALL
 SymCryptEcpointAdd(
-    _In_    PCSYMCRYPT_ECURVE   pCurve, 
+    _In_    PCSYMCRYPT_ECURVE   pCurve,
     _In_    PCSYMCRYPT_ECPOINT  poSrc1,
     _In_    PCSYMCRYPT_ECPOINT  poSrc2,
     _Out_   PSYMCRYPT_ECPOINT   poDst,
-    _In_    UINT32              flags,
-    _Out_writes_bytes_opt_( cbScratch ) 
+            UINT32              flags,
+    _Out_writes_bytes_opt_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
-    SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].addFunc( pCurve, poSrc1, poSrc2, poDst, flags, pbScratch, cbScratch );
+    SYMCRYPT_ECURVE_CALL( pCurve ) addFunc( pCurve, poSrc1, poSrc2, poDst, flags, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
@@ -178,11 +215,11 @@ SymCryptEcpointAddDiffNonZero(
     _In_    PCSYMCRYPT_ECPOINT  poSrc1,
     _In_    PCSYMCRYPT_ECPOINT  poSrc2,
     _Out_   PSYMCRYPT_ECPOINT   poDst,
-    _Out_writes_bytes_opt_( cbScratch ) 
+    _Out_writes_bytes_opt_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
-    SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].addDiffFunc( pCurve, poSrc1, poSrc2, poDst, pbScratch, cbScratch );
+    SYMCRYPT_ECURVE_CALL( pCurve ) addDiffFunc( pCurve, poSrc1, poSrc2, poDst, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
@@ -192,12 +229,12 @@ SymCryptEcpointDouble(
     _In_    PCSYMCRYPT_ECURVE   pCurve,
     _In_    PCSYMCRYPT_ECPOINT  poSrc,
     _Out_   PSYMCRYPT_ECPOINT   poDst,
-    _In_    UINT32              flags,
-    _Out_writes_bytes_opt_( cbScratch ) 
+            UINT32              flags,
+    _Out_writes_bytes_opt_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
-    SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].doubleFunc( pCurve, poSrc, poDst, flags, pbScratch, cbScratch );
+    SYMCRYPT_ECURVE_CALL( pCurve ) doubleFunc( pCurve, poSrc, poDst, flags, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
@@ -211,24 +248,24 @@ SymCryptEcpointNegate(
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
-    SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].negateFunc( pCurve, poSrc, mask, pbScratch, cbScratch );
+    SYMCRYPT_ECURVE_CALL( pCurve ) negateFunc( pCurve, poSrc, mask, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptEcpointScalarMul(
-    _In_    PCSYMCRYPT_ECURVE       pCurve,
-    _In_    PCSYMCRYPT_INT          piScalar,
+    _In_    PCSYMCRYPT_ECURVE   pCurve,
+    _In_    PCSYMCRYPT_INT      piScalar,
     _In_opt_
-            PCSYMCRYPT_ECPOINT      poSrc,
-    _In_    UINT32                  flags,
-    _Out_   PSYMCRYPT_ECPOINT       poDst,
-    _Out_writes_bytes_opt_( cbScratch ) 
+            PCSYMCRYPT_ECPOINT  poSrc,
+            UINT32              flags,
+    _Out_   PSYMCRYPT_ECPOINT   poDst,
+    _Out_writes_bytes_opt_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
-    return SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].scalarMulFunc( pCurve, piScalar, poSrc, flags, poDst, pbScratch, cbScratch );
+    return SYMCRYPT_ECURVE_CALL( pCurve ) scalarMulFunc( pCurve, piScalar, poSrc, flags, poDst, pbScratch, cbScratch );
 }
 
 SYMCRYPT_DISABLE_CFG
@@ -238,12 +275,12 @@ SymCryptEcpointMultiScalarMul(
     _In_    PCSYMCRYPT_ECURVE       pCurve,
     _In_    PCSYMCRYPT_INT *        piSrcScalarArray,
     _In_    PCSYMCRYPT_ECPOINT *    poSrcEcpointArray,
-    _In_    UINT32                  nPoints,
-    _In_    UINT32                  flags,
+            UINT32                  nPoints,
+            UINT32                  flags,
     _Out_   PSYMCRYPT_ECPOINT       poDst,
-    _Out_writes_bytes_opt_( cbScratch ) 
-            PBYTE               pbScratch,
-            SIZE_T              cbScratch )
+    _Out_writes_bytes_opt_( cbScratch )
+            PBYTE                   pbScratch,
+            SIZE_T                  cbScratch )
 {
-    return SymCryptEcurveAllFunctionPointers[ (pCurve->type) & 3 ].multiScalarMulFunc( pCurve, piSrcScalarArray, poSrcEcpointArray, nPoints, flags, poDst, pbScratch, cbScratch );
+    return SYMCRYPT_ECURVE_CALL( pCurve ) multiScalarMulFunc( pCurve, piSrcScalarArray, poSrcEcpointArray, nPoints, flags, poDst, pbScratch, cbScratch );
 }

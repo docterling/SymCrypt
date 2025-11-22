@@ -88,18 +88,19 @@ SymCryptIntMillerRabinPrimalityTest(
     // is that Src > 3.
     SymCryptIntCopy( piSrc, piD );
     borrow = SymCryptIntSubUint32( piD, 1, piD );
-    SYMCRYPT_HARD_ASSERT( borrow==0 );
+    SYMCRYPT_ASSERT( borrow==0 );
 
     SYMCRYPT_ASSERT( SymCryptIntGetBit( piD, 0 ) == 0 );
 
     // Check the 3 mod 4 requirement when side-channel safe
-    SYMCRYPT_HARD_ASSERT(
-            ((flags & SYMCRYPT_FLAG_DATA_PUBLIC) != 0) || 
+    SYMCRYPT_ASSERT(
+            ((flags & SYMCRYPT_FLAG_DATA_PUBLIC) != 0) ||
             (SymCryptIntGetBit( piD, 1 )!=0) );
+    UNREFERENCED_PARAMETER( flags );
 
     // Calculate R and D such that Src - 1 = D*2^R
     //      Notice that the loop executes only if
-    //      the SYMCRYPT_FLAG_INT_LL_NOT_SIDE_CHANEL_SAFE is
+    //      the SYMCRYPT_FLAG_DATA_PUBLIC is
     //      specified (and Src != 3 mod 4)
     R = 1;
     while( SymCryptIntGetBit( piD, R )==0 )
@@ -115,7 +116,7 @@ SymCryptIntMillerRabinPrimalityTest(
     for (UINT32 i=0; i<nIterations; i++)
     {
         // Pick a random X in [2, piSrc-2]
-        // Therefore the flags parameter is 0 (default: not allowed 0, 1, -1)
+        // Therefore the flags parameter is 0 (default: not allowed 0, 1, -1 when modulus > 3)
         SymCryptModSetRandom( pmModulus, peX, 0, pbScratch, cbScratch );
 
         // X^D mod piSrc
@@ -131,7 +132,7 @@ SymCryptIntMillerRabinPrimalityTest(
 
         // repeat R-1 times
         //      Notice that the inner loop executes only if
-        //      the SYMCRYPT_FLAG_INT_LL_NOT_SIDE_CHANEL_SAFE is
+        //      the SYMCRYPT_FLAG_DATA_PUBLIC is
         //      specified (and Src != 3 mod 4)
         innerLoop = TRUE;
         for (UINT32 j=0; (j<R-1)&&(innerLoop); j++)
@@ -173,7 +174,7 @@ SymCryptIntGenerateRandomPrime(
                                     UINT32              nPubExp,
                                     UINT32              nTries,
                                     UINT32              flags,
-    _Out_                           PSYMCRYPT_INT       piDst,
+    _Inout_                         PSYMCRYPT_INT       piDst,
     _Out_writes_bytes_( cbScratch ) PBYTE               pbScratch,
                                     SIZE_T              cbScratch )
 {
@@ -193,8 +194,6 @@ SymCryptIntGenerateRandomPrime(
 
     PCSYMCRYPT_TRIALDIVISION_CONTEXT pTrialDivisionContext = SymCryptCreateTrialDivisionContext( SymCryptIntDigitsizeOfObject( piHigh ) );
 
-
-
     SYMCRYPT_ASSERT( cbScratch >= SYMCRYPT_SCRATCH_BYTES_FOR_INT_PRIME_GEN( SymCryptIntDigitsizeOfObject( piDst ) ) );
     SYMCRYPT_ASSERT( nPubExp <= SYMCRYPT_RSAKEY_MAX_NUMOF_PUBEXPS );
     SYMCRYPT_ASSERT( SymCryptDigitsFromBits( 64 ) == 1 );
@@ -205,6 +204,13 @@ SymCryptIntGenerateRandomPrime(
     cbObj = SymCryptSizeofDivisorFromDigits( 1 );
     for( e = 0; e < nPubExp; e++ )
     {
+        SYMCRYPT_ASSERT( cbScratch >= cbObj );
+        if( pu64PubExp[e] == 0 )
+        {
+            scError = SYMCRYPT_INVALID_ARGUMENT;
+            goto exit;
+        }
+
         pdPubExp[e] = SymCryptDivisorCreate( pbScratch, cbObj, 1 );
         pbScratch += cbObj;
         cbScratch -= cbObj;
@@ -214,6 +220,7 @@ SymCryptIntGenerateRandomPrime(
     }
 
     cbObj = SymCryptSizeofIntFromDigits( 1 );
+    SYMCRYPT_ASSERT( cbScratch >= cbObj + nBytes );
     piTmp = SymCryptIntCreate( pbScratch, cbObj, 1 );
     pbScratch += cbObj;
     cbScratch -= cbObj;
@@ -260,9 +267,13 @@ SymCryptIntGenerateRandomPrime(
         {
             SymCryptIntDivMod( piDst, pdPubExp[e], NULL, piTmp, pbScratch, cbScratch );
 
-            // Check whether P-1 is coprime to pubExp. We have (P mod pubExp) in piTmp.
-            // The case where piTmp == 0 is not relevant as then P is not a prime and the further tests will catch that, so
-            // we don't care whether this tests fails or succeeds
+            // Check that e has a modular inverse mod P-1
+            // If e and P-1 are coprime, or GCD( P-1, e ) == 1, then e^-1 exists
+            // We have (P mod e) in piTmp.
+            // If piTmp == 0 then P is divisible by e, and will fail primality test - we don't care about the result of the GCD
+            // Otherwise, GCD( (P mod e)-1, e ) == GCD( P-1 mod e, e ) == GCD( P-1, e )
+            //
+            // Note that if P-1 is a multiple of e then (P mod e)-1 == 0, and GCD( 0, e ) == e
             if( SymCryptUint64Gcd( pu64PubExp[e], SymCryptIntGetValueLsbits64( piTmp ) - 1, SYMCRYPT_FLAG_GCD_INPUTS_NOT_BOTH_EVEN ) != 1 )
             {
                 // We can't continue the big loop from here :-(

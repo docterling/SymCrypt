@@ -1,5 +1,5 @@
 //
-// Pattern file for the Symcrypt TLS PRF 1.1 implementations.
+// Pattern file for the SymCrypt TLS PRF 1.1 implementations.
 //
 // Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
 //
@@ -35,7 +35,7 @@ VOID
 algImpKeyPerfFunction<ImpXxx, AlgXxx, BaseAlgXxx>(PBYTE buf1, PBYTE buf2, PBYTE buf3, SIZE_T keySize)
 {
     UNREFERENCED_PARAMETER(buf3);
-    SYMCRYPT_XxxExpandKey((SYMCRYPT_XXX_EXPANDED_KEY *)buf1, buf2, keySize);
+    SCSHIM_XxxExpandKey((SCSHIM_XXX_EXPANDED_KEY *)buf1, buf2, keySize);
 }
 
 template<>
@@ -44,14 +44,14 @@ algImpCleanPerfFunction<ImpXxx, AlgXxx, BaseAlgXxx>(PBYTE buf1, PBYTE buf2, PBYT
 {
     UNREFERENCED_PARAMETER(buf2);
     UNREFERENCED_PARAMETER(buf3);
-    SymCryptWipeKnownSize(buf1, sizeof(SYMCRYPT_XXX_EXPANDED_KEY));
+    SymCryptWipeKnownSize(buf1, sizeof(SCSHIM_XXX_EXPANDED_KEY));
 }
 
 // <<<<<<<<<<<<<<<<
 
 template<>
 VOID
-KdfImp<ImpSc, AlgTlsPrf1_1, BaseAlgXxx>::derive(
+KdfImp<ImpXxx, AlgTlsPrf1_1, BaseAlgXxx>::derive(
     _In_reads_(cbKey)       PCBYTE          pbKey,
                             SIZE_T          cbKey,
     _In_                    PKDF_ARGUMENTS  pArgs,
@@ -85,33 +85,31 @@ KdfImp<ImpSc, AlgTlsPrf1_1, BaseAlgXxx>::derive(
             return;
     }
 
-    initXmmRegisters();
-    scError = SymCryptTlsPrf1_1(
+    scError = ScShimSymCryptTlsPrf1_1(
         pbKey, cbKey,
         pbLabel, cbLabel,
         pbSeed, cbSeed,
         &buf1[0], cbDst);
-    verifyXmmRegisters();
 
     CHECK(scError == SYMCRYPT_NO_ERROR, "Error in SymCrypt TLS PRF 1.1");
 
-    scError = SymCryptTlsPrf1_1ExpandKey(&expandedKey,
+    scError = ScShimSymCryptTlsPrf1_1ExpandKey(
+        &expandedKey,
         pbKey, cbKey);
-    verifyXmmRegisters();
     CHECK(scError == SYMCRYPT_NO_ERROR, "Error in SymCrypt TLS PRF 1.1");
 
-    SymCryptMarvin32(SymCryptMarvin32DefaultSeed, (PCBYTE)&expandedKey, sizeof(expandedKey), expandedKeyChecksum);
+    ScShimSymCryptMarvin32(ScShimSymCryptMarvin32DefaultSeed, (PCBYTE)&expandedKey, sizeof(expandedKey), expandedKeyChecksum);
 
-    scError = SymCryptTlsPrf1_1Derive(&expandedKey,
+    scError = ScShimSymCryptTlsPrf1_1Derive(
+        &expandedKey,
         pbLabel, cbLabel,
         pbSeed, cbSeed,
         &buf2[0], cbDst);
-    verifyXmmRegisters();
     CHECK(scError == SYMCRYPT_NO_ERROR, "Error in SymCrypt TLS PRF 1.1");
 
     CHECK(memcmp(buf1, buf2, cbDst) == 0, "SymCrypt TLS PRF 1.1 calling versions disagree");
 
-    SymCryptMarvin32(SymCryptMarvin32DefaultSeed, (PCBYTE)&expandedKey, sizeof(expandedKey), buf2);
+    ScShimSymCryptMarvin32(ScShimSymCryptMarvin32DefaultSeed, (PCBYTE)&expandedKey, sizeof(expandedKey), buf2);
     CHECK(memcmp(expandedKeyChecksum, buf2, SYMCRYPT_MARVIN32_RESULT_SIZE) == 0, "SymCrypt TLS PRF 1.1 modified expanded key");
 
     memcpy(pbDst, buf1, cbDst);
@@ -122,6 +120,6 @@ template<>
 VOID
 algImpDataPerfFunction<ImpXxx, AlgXxx, BaseAlgXxx>(PBYTE buf1, PBYTE buf2, PBYTE buf3, SIZE_T dataSize)
 {
-    SymCryptTlsPrf1_1Derive((PCSYMCRYPT_TLSPRF1_1_EXPANDED_KEY)buf1, NULL, 0, buf2, 32, buf3, dataSize);
+    ScShimSymCryptTlsPrf1_1Derive((PCSYMCRYPT_TLSPRF1_1_EXPANDED_KEY)buf1, nullptr, 0, buf2, 32, buf3, dataSize);
 }
 

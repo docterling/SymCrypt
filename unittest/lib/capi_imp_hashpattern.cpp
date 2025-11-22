@@ -4,21 +4,21 @@
 // Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
 //
 
-HashImp<ImpXxx, AlgXxx>::HashImp<ImpXxx, AlgXxx>()
+HashImp<ImpXxx, AlgXxx>::HashImp()
 {
     state.hHash = 0;
     m_perfDataFunction = &algImpDataPerfFunction<ImpXxx, AlgXxx>;
 }
 
 template<>
-HashImp<ImpXxx, AlgXxx>::~HashImp<ImpXxx, AlgXxx>()
+HashImp<ImpXxx, AlgXxx>::~HashImp()
 {
     CHECK( state.hHash == 0, "Handle leak" );
 }
 
 SIZE_T HashImp<ImpXxx, AlgXxx>::inputBlockLen()
 {
-    return SYMCRYPT_XXX_INPUT_BLOCK_SIZE;
+    return SCSHIM_XXX_INPUT_BLOCK_SIZE;
 }
 
 SIZE_T HashImp<ImpXxx, AlgXxx>::resultLen()

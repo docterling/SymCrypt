@@ -7,7 +7,7 @@
 //
 // This module contains the routines to implement the two PRF
 // functions for the TLS protocols 1.1 and 1.2. These are used in
-// the protocol's key derivation function. 
+// the protocol's key derivation function.
 //
 //
 
@@ -18,12 +18,12 @@
 //
 #define SYMCRYPT_TLS_MAX_LABEL_AND_SEED_SIZE     (SYMCRYPT_TLS_MAX_LABEL_SIZE + SYMCRYPT_TLS_MAX_SEED_SIZE)
 
-// This **MUST** be a common multiple of MD5 
+// This **MUST** be a common multiple of MD5
 // output size and SHA1 output size.
-#define SYMCRYPT_TLS_1_1_CHUNK_SIZE              80                 
+#define SYMCRYPT_TLS_1_1_CHUNK_SIZE              80
 
 //
-// SymCryptTlsPrf1_1ExpandKey is the key expansion function for versions 1.0 
+// SymCryptTlsPrf1_1ExpandKey is the key expansion function for versions 1.0
 // and 1.1 of the TLS protocol. It takes as inputs a pointer to the expanded TLSPRF1.1
 // key, and the key material in pbKey. Regarding the treatment of the key
 // material (the "secret"), the following is defined in RFCs 2246 and 4346:
@@ -53,7 +53,6 @@
 //          used keys (pre-master secret) longer than 128 bytes. To achieve interop
 //          with servers complying to the RFC we use the entire key for the HMAC calculation.
 //
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptTlsPrf1_1ExpandKey(
@@ -92,16 +91,16 @@ SymCryptTlsPrf1_1ExpandKey(
     //      read twice (when the key length is odd). This violates
     //      the standard rule that input data should only be read
     //      once. In this case, we do this for the following reasons:
-    //      -   Avoiding the dual-read is difficult; we’d have to buffer
-    //          an arbitrary-size input, and SymCrypt avoids memory 
+    //      -   Avoiding the dual-read is difficult; we'd have to buffer
+    //          an arbitrary-size input, and SymCrypt avoids memory
     //          allocations for symmetric algorithms.
     //      -   The dual-reading of inputs is a problem when the
     //          memory is double-mapped to a different (less trusted)
-    //          security context. (E.g. a kernel-mode operation on 
+    //          security context. (E.g. a kernel-mode operation on
     //          memory that is also mapped into a user address space.)
     //          This PRF is used by TLS in LSA where that situation
-    //          does not occur. 
-    //      -   This is used for TLS 1.0 and TLS 1.1, both of which 
+    //          does not occur.
+    //      -   This is used for TLS 1.0 and TLS 1.1, both of which
     //          are on the deprecation path.
     //      -   In the dual-read attack, the input is typically provided
     //          by the attacker, and then changed whilst the code is
@@ -133,7 +132,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptTlsPrf1_2ExpandKey(
@@ -148,11 +146,11 @@ SymCryptTlsPrf1_2ExpandKey(
     return macAlgorithm->expandKeyFunc( &pExpandedKey->macKey, pbKey, cbKey );
 }
 
-// 
-// SymCryptTlsPrfMac uses the expanded key and hashes the concatenated 
-// inputs pbAi and pbSeed. It is used by all the TLS versions per 
+//
+// SymCryptTlsPrfMac uses the expanded key and hashes the concatenated
+// inputs pbAi and pbSeed. It is used by all the TLS versions per
 // RFCs 2246, 4346, and 5246.
-// Remark: 
+// Remark:
 //      - cbSeed can be 0 and pbSeed NULL.
 //      - pbResult should be of size at least pMacAlgorithm->resultSize
 //
@@ -172,7 +170,7 @@ SymCryptTlsPrfMac(
 
     pMacAlgorithm->initFunc( &macState, pMacExpandedKey );
     pMacAlgorithm->appendFunc(&macState, pbAi, cbAi);
-    
+
     if (cbSeed > 0)
     {
         pMacAlgorithm->appendFunc( &macState, pbSeed, cbSeed );
@@ -183,7 +181,7 @@ SymCryptTlsPrfMac(
     // No need to wipe the state. The resultFunc wipes it.
 }
 
-// 
+//
 // SymCryptTlsPrfPHash is defined in RFCs 2246, 4346,
 // and 5246 as follows:
 //
@@ -194,7 +192,7 @@ SymCryptTlsPrfMac(
 //          P_hash(secret, seed) = HMAC_hash(secret, A(1) + seed) +
 //                                 HMAC_hash(secret, A(2) + seed) +
 //                                 HMAC_hash(secret, A(3) + seed) + ...
-//  
+//
 //      Where + indicates concatenation.
 //      A() is defined as:
 //          A(0) = seed
@@ -218,10 +216,10 @@ SymCryptTlsPrfPHash(
     SYMCRYPT_ALIGN BYTE    rbAi[SYMCRYPT_MAC_MAX_RESULT_SIZE];
     SYMCRYPT_ALIGN BYTE    rbPartialResult[SYMCRYPT_MAC_MAX_RESULT_SIZE];
                    BYTE *  pbTmp = pbResult;
-    
+
     SIZE_T  cbMacResultSize = pMacAlgorithm->resultSize;
     SIZE_T  cbBytesToWrite = cbResult;
-    
+
     if (cbAiIn == 0)
     {
         // Build A(1)
@@ -237,9 +235,9 @@ SymCryptTlsPrfPHash(
     else
     {
         // Get the previous Ai
-        memcpy(rbAi, pbAiIn, min(SYMCRYPT_MAC_MAX_RESULT_SIZE, cbAiIn));
+        memcpy(rbAi, pbAiIn, SYMCRYPT_MIN(SYMCRYPT_MAC_MAX_RESULT_SIZE, cbAiIn));
     }
-   
+
     while (cbBytesToWrite > 0)
     {
         // Build HMAC( secret, A(i) + seed)
@@ -251,11 +249,11 @@ SymCryptTlsPrfPHash(
             pbSeed,             // the "seed" part
             cbSeed,
             rbPartialResult);
-    
-        // Store it in the output buffer
-        memcpy(pbTmp, rbPartialResult, min(cbBytesToWrite, cbMacResultSize));
 
-        // Build A(i+1) 
+        // Store it in the output buffer
+        memcpy(pbTmp, rbPartialResult, SYMCRYPT_MIN(cbBytesToWrite, cbMacResultSize));
+
+        // Build A(i+1)
         SymCryptTlsPrfMac(
             pMacAlgorithm,
             pMacExpandedKey,
@@ -264,12 +262,12 @@ SymCryptTlsPrfPHash(
             NULL,              // No "seed" part for A(i)'s
             0,
             rbAi);
-        
+
         if (cbBytesToWrite <= cbMacResultSize)
         {
             break;
         }
-        
+
         pbTmp += cbMacResultSize;
         cbBytesToWrite -= cbMacResultSize;
     }
@@ -277,9 +275,9 @@ SymCryptTlsPrfPHash(
     // Store the next A(i) if needed
     if (cbAiOut > 0)
     {
-        memcpy(pbAiOut, rbAi, min(cbAiOut,cbMacResultSize));
+        memcpy(pbAiOut, rbAi, SYMCRYPT_MIN(cbAiOut,cbMacResultSize));
     }
-    
+
     SymCryptWipeKnownSize(rbAi, sizeof(rbAi));
     SymCryptWipeKnownSize(rbPartialResult, sizeof(rbPartialResult));
 }
@@ -296,12 +294,11 @@ SymCryptTlsPrfPHash(
 //
 // Remark: We will do the do the two P_hash computations in parallel
 //
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptTlsPrf1_1Derive(
     _In_                    PCSYMCRYPT_TLSPRF1_1_EXPANDED_KEY   pExpandedKey,
-    _In_reads_(cbLabel)     PCBYTE                              pbLabel,
+    _In_reads_opt_(cbLabel) PCBYTE                              pbLabel,
     _In_                    SIZE_T                              cbLabel,
     _In_reads_(cbSeed)      PCBYTE                              pbSeed,
     _In_                    SIZE_T                              cbSeed,
@@ -315,14 +312,14 @@ SymCryptTlsPrf1_1Derive(
 
     SYMCRYPT_ALIGN BYTE    rbAiMd5[SYMCRYPT_HMAC_MD5_RESULT_SIZE];
     SYMCRYPT_ALIGN BYTE    rbPartialResultMd5[SYMCRYPT_TLS_1_1_CHUNK_SIZE];
-    
+
     SYMCRYPT_ALIGN BYTE    rbAiSha1[SYMCRYPT_HMAC_SHA1_RESULT_SIZE];
     SYMCRYPT_ALIGN BYTE    rbPartialResultSha1[SYMCRYPT_TLS_1_1_CHUNK_SIZE];
 
                    BYTE *  pbTmp = pbResult;
                    SIZE_T  cbBytesToWrite = cbResult;
 
-    // Size checks 
+    // Size checks
     if ((cbLabel > SYMCRYPT_TLS_MAX_LABEL_SIZE) || (cbSeed > SYMCRYPT_TLS_MAX_SEED_SIZE))
     {
         scError = SYMCRYPT_WRONG_DATA_SIZE;
@@ -331,8 +328,11 @@ SymCryptTlsPrf1_1Derive(
 
     // Concatenating the label and the seed
     pbTmp = rbLabelAndSeed;
-    memcpy(pbTmp, pbLabel, cbLabel);
-    pbTmp += cbLabel;
+    if( cbLabel > 0 )
+    {
+        memcpy(pbTmp, pbLabel, cbLabel);
+        pbTmp += cbLabel;
+    }
     memcpy(pbTmp, pbSeed, cbSeed);
     cbLabelAndSeed = cbLabel + cbSeed;
 
@@ -370,7 +370,7 @@ SymCryptTlsPrf1_1Derive(
             rbAiMd5,
             SYMCRYPT_HMAC_MD5_RESULT_SIZE,
             rbPartialResultMd5,
-            min(cbBytesToWrite, SYMCRYPT_TLS_1_1_CHUNK_SIZE),
+            SYMCRYPT_MIN(cbBytesToWrite, SYMCRYPT_TLS_1_1_CHUNK_SIZE),
             rbAiMd5,
             SYMCRYPT_HMAC_MD5_RESULT_SIZE);
 
@@ -383,7 +383,7 @@ SymCryptTlsPrf1_1Derive(
             rbAiSha1,
             SYMCRYPT_HMAC_SHA1_RESULT_SIZE,
             rbPartialResultSha1,
-            min(cbBytesToWrite, SYMCRYPT_TLS_1_1_CHUNK_SIZE),
+            SYMCRYPT_MIN(cbBytesToWrite, SYMCRYPT_TLS_1_1_CHUNK_SIZE),
             rbAiSha1,
             SYMCRYPT_HMAC_SHA1_RESULT_SIZE);
 
@@ -392,7 +392,7 @@ SymCryptTlsPrf1_1Derive(
             rbPartialResultMd5,
             rbPartialResultSha1,
             pbTmp,
-            min(cbBytesToWrite, SYMCRYPT_TLS_1_1_CHUNK_SIZE));
+            SYMCRYPT_MIN(cbBytesToWrite, SYMCRYPT_TLS_1_1_CHUNK_SIZE));
 
         if (cbBytesToWrite <= SYMCRYPT_TLS_1_1_CHUNK_SIZE)
         {
@@ -421,12 +421,11 @@ cleanup:
 //
 //          PRF(secret, label, seed) = P_<hash>(secret, label + seed)
 //
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptTlsPrf1_2Derive(
     _In_                    PCSYMCRYPT_TLSPRF1_2_EXPANDED_KEY   pExpandedKey,
-    _In_reads_(cbLabel)     PCBYTE                              pbLabel,
+    _In_reads_opt_(cbLabel) PCBYTE                              pbLabel,
     _In_                    SIZE_T                              cbLabel,
     _In_reads_(cbSeed)      PCBYTE                              pbSeed,
     _In_                    SIZE_T                              cbSeed,
@@ -438,7 +437,7 @@ SymCryptTlsPrf1_2Derive(
     SYMCRYPT_ALIGN BYTE    rbLabelAndSeed[SYMCRYPT_TLS_MAX_LABEL_AND_SEED_SIZE];
                    BYTE *  pbTmp;
 
-    // Size checks 
+    // Size checks
     if ((cbLabel > SYMCRYPT_TLS_MAX_LABEL_SIZE) || (cbSeed > SYMCRYPT_TLS_MAX_SEED_SIZE))
     {
         scError = SYMCRYPT_WRONG_DATA_SIZE;
@@ -447,8 +446,11 @@ SymCryptTlsPrf1_2Derive(
 
     // Concatenating the label and the seed
     pbTmp = rbLabelAndSeed;
-    memcpy(pbTmp, pbLabel, cbLabel);
-    pbTmp += cbLabel;
+    if( cbLabel > 0 )
+    {
+        memcpy(pbTmp, pbLabel, cbLabel);
+        pbTmp += cbLabel;
+    }
     memcpy(pbTmp, pbSeed, cbSeed);
 
     //
@@ -477,13 +479,12 @@ cleanup:
 //
 // The full TLS 1.0/1.1 Key Derivation Function
 //
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptTlsPrf1_1(
     _In_reads_(cbKey)       PCBYTE   pbKey,
     _In_                    SIZE_T   cbKey,
-    _In_reads_(cbLabel)     PCBYTE   pbLabel,
+    _In_reads_opt_(cbLabel) PCBYTE   pbLabel,
     _In_                    SIZE_T   cbLabel,
     _In_reads_(cbSeed)      PCBYTE   pbSeed,
     _In_                    SIZE_T   cbSeed,
@@ -499,7 +500,7 @@ SymCryptTlsPrf1_1(
     {
         goto cleanup;
     }
-    
+
     // Derive the key
     scError = SymCryptTlsPrf1_1Derive(
         &key,
@@ -524,14 +525,13 @@ cleanup:
 //
 // The full TLS 1.2 Key Derivation Function
 //
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptTlsPrf1_2(
     _In_                    PCSYMCRYPT_MAC  pMacAlgorithm,
     _In_reads_(cbKey)       PCBYTE          pbKey,
     _In_                    SIZE_T          cbKey,
-    _In_reads_(cbLabel)     PCBYTE          pbLabel,
+    _In_reads_opt_(cbLabel) PCBYTE          pbLabel,
     _In_                    SIZE_T          cbLabel,
     _In_reads_(cbSeed)      PCBYTE          pbSeed,
     _In_                    SIZE_T          cbSeed,

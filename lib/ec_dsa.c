@@ -58,7 +58,7 @@
             4) If c == FE2IP(x(P)) mod r, return TRUE.
                Otherwise return FALSE.
 
-FE2IP is a P1363 function that casts a field element to an 
+FE2IP is a P1363 function that casts a field element to an
 integer (MSB_FIRST).  See Section 5.5.5 of P1363.
 */
 
@@ -67,7 +67,7 @@ integer (MSB_FIRST).  See Section 5.5.5 of P1363.
 // the original CNG implementation:
 //
 // Initially both implementations truncate the last **bytes**
-// of the hash that are over the group byte length. Then if 
+// of the hash that are over the group byte length. Then if
 // the bit length of the hash is still bigger than the bit
 // length of the group order, ...
 //
@@ -79,7 +79,6 @@ integer (MSB_FIRST).  See Section 5.5.5 of P1363.
 //    topmost bits of the hash.
 //      In the same example as before we would zero out the top 7 bits.
 //
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptEcDsaTruncateHash(
@@ -140,7 +139,8 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
+#define SYMCRYPT_MAX_ECDSA_SIGNATURE_COUNT (100)
+
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptEcDsaSignEx(
@@ -170,7 +170,7 @@ SymCryptEcDsaSignEx(
     PSYMCRYPT_MODELEMENT    peSigC = NULL;
     PSYMCRYPT_MODELEMENT    peSigD = NULL;
     PSYMCRYPT_MODELEMENT    peTmp = NULL;
-    
+
     PBYTE                   pbX = NULL;
 
     UINT32  nDigitsInt = 0;
@@ -182,16 +182,29 @@ SymCryptEcDsaSignEx(
     UINT32  cbRs = 0;
     UINT32  cbX  = 0;
 
-    // Make sure that only the correct flags are set
-    if ( (flags & ~SYMCRYPT_FLAG_ECDSA_NO_TRUNCATION) != 0 )
+    UINT32 signatureCount = 0;
+    UINT32 allowedFlags = SYMCRYPT_FLAG_ECDSA_NO_TRUNCATION | SYMCRYPT_FLAG_DATA_PUBLIC;
+    UINT32 publicFlag = flags & SYMCRYPT_FLAG_DATA_PUBLIC;
+    UINT32 truncationFlag = flags & SYMCRYPT_FLAG_ECDSA_NO_TRUNCATION;
+
+    // Make sure that the key may be used in ECDSA
+    if ( ((pKey->fAlgorithmInfo & SYMCRYPT_FLAG_ECKEY_ECDSA) == 0)  )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
+
+    // Make sure only allowed flags are specified and
+    // there is a private key
+    if ( ((flags & ~(allowedFlags)) != 0) ||
+         (!pKey->hasPrivateKey) )
     {
         scError = SYMCRYPT_INVALID_ARGUMENT;
         goto cleanup;
     }
 
     // Calculating the digits for the temporary integers
-    nDigitsInt = SymCryptDigitsFromBits( (UINT32)cbHashValue * 8 );
-    nDigitsInt = max( nDigitsInt, pCurve->GOrdDigits );
+    nDigitsInt = pCurve->GOrdDigits;
 
     nDigitsMul = SymCryptEcurveDigitsofScalarMultiplier(pCurve);
 
@@ -203,10 +216,10 @@ SymCryptEcDsaSignEx(
     cbX  = SymCryptEcurveSizeofFieldElement( pCurve );
 
     cbScratchInternal = SYMCRYPT_SCRATCH_BYTES_FOR_SCALAR_ECURVE_OPERATIONS( pCurve );
-    cbScratchInternal = max( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->GOrdDigits ) );
-    cbScratchInternal = max( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->FModDigits ) );
-    cbScratchInternal = max( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_MODINV( pCurve->GOrdDigits ) );
-    cbScratchInternal = max( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_GETSET_VALUE_ECURVE_OPERATIONS( pCurve ) );
+    cbScratchInternal = SYMCRYPT_MAX( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->GOrdDigits ) );
+    cbScratchInternal = SYMCRYPT_MAX( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->FModDigits ) );
+    cbScratchInternal = SYMCRYPT_MAX( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_MODINV( pCurve->GOrdDigits ) );
+    cbScratchInternal = SYMCRYPT_MAX( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_GETSET_VALUE_ECURVE_OPERATIONS( pCurve ) );
 
     //
     // From symcrypt_internal.h we have:
@@ -251,11 +264,11 @@ SymCryptEcDsaSignEx(
     SYMCRYPT_ASSERT( peTmp != NULL);
 
     // Truncate the message according to the flags
-    scError = SymCryptEcDsaTruncateHash( 
-                    pCurve, 
-                    pbHashValue, 
-                    cbHashValue, 
-                    flags,
+    scError = SymCryptEcDsaTruncateHash(
+                    pCurve,
+                    pbHashValue,
+                    cbHashValue,
+                    truncationFlag,
                     peMsghash,
                     piTmp,
                     pbScratch,
@@ -268,7 +281,8 @@ SymCryptEcDsaSignEx(
     //
     // Main loop: Stop when both c and d are not zero (unless a specific k is provided)
     //
-    do {
+    while( TRUE )
+    {
         if ( piK == NULL )
         {
             SymCryptEcpointSetRandom( pCurve, piMul, poKG, pbScratch, cbScratchInternal );          // Generate k and k*G
@@ -276,31 +290,40 @@ SymCryptEcDsaSignEx(
         }
         else
         {
-            SymCryptIntCopy( piK, piMul );
-            SymCryptEcpointScalarMul( pCurve, piMul, NULL, 0, poKG, pbScratch, cbScratchInternal );  // Generate k*G
-
-            SymCryptIntToModElement( piMul, pCurve->GOrd, peTmp, pbScratch, cbScratchInternal );
-
-            // Make sure that the K passed in is not zero
-            if (SymCryptModElementIsZero( pCurve->GOrd, peTmp ))
+            // Ensure that piK is in the range [1, GOrd-1]
+            if( SymCryptIntIsEqualUint32( piK, 0 ) ||
+                !SymCryptIntIsLessThan( piK, SymCryptIntFromModulus( pCurve->GOrd ) ) )
             {
                 scError = SYMCRYPT_INVALID_ARGUMENT;
                 goto cleanup;
             }
+
+            SymCryptIntCopy( piK, piMul );
+            SymCryptIntToModElement( piMul, pCurve->GOrd, peTmp, pbScratch, cbScratchInternal );
+
+            scError = SymCryptEcpointScalarMul( pCurve, piMul, NULL, 0, poKG, pbScratch, cbScratchInternal );  // Generate k*G
+            if ( scError != SYMCRYPT_NO_ERROR )
+            {
+                goto cleanup;
+            }
         }
 
-        SymCryptModInv( pCurve->GOrd, peTmp, peTmp, 0, pbScratch, cbScratchInternal );              // Invert k
+        scError = SymCryptModInv( pCurve->GOrd, peTmp, peTmp, publicFlag, pbScratch, cbScratchInternal );              // Invert k
+        if ( scError != SYMCRYPT_NO_ERROR )
+        {
+            goto cleanup;
+        }
 
         // Get the x coordinates from KG
-        scError = SymCryptEcpointGetValue( 
-                        pCurve, 
-                        poKG, 
-                        SYMCRYPT_NUMBER_FORMAT_MSB_FIRST, 
-                        SYMCRYPT_ECPOINT_FORMAT_X, 
-                        pbX, 
-                        cbX, 
-                        0,
-                        pbScratch, 
+        scError = SymCryptEcpointGetValue(
+                        pCurve,
+                        poKG,
+                        SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
+                        SYMCRYPT_ECPOINT_FORMAT_X,
+                        pbX,
+                        cbX,
+                        publicFlag,
+                        pbScratch,
                         cbScratchInternal );
         if ( scError != SYMCRYPT_NO_ERROR )
         {
@@ -323,13 +346,32 @@ SymCryptEcDsaSignEx(
             SymCryptModAdd( pCurve->GOrd, peSigD, peSigD, peSigD, pbScratch, cbScratchInternal );
         }
 
-        SymCryptModMul( pCurve->GOrd, peSigC, peSigD, peSigD, pbScratch, cbScratchInternal );                   // s * c 
+        SymCryptModMul( pCurve->GOrd, peSigC, peSigD, peSigD, pbScratch, cbScratchInternal );                   // s * c
         SymCryptModAdd( pCurve->GOrd, peMsghash, peSigD, peSigD, pbScratch, cbScratchInternal );                // msghash + s*c
         SymCryptModMul( pCurve->GOrd, peSigD, peTmp, peSigD, pbScratch, cbScratchInternal );                    // ( msghash + s*c ) / k
 
-    } while ( (piK == NULL) && 
-              ( SymCryptModElementIsZero( pCurve->GOrd, peSigC ) |
-                SymCryptModElementIsZero( pCurve->GOrd, peSigD ) ) );
+        if ( !( SymCryptModElementIsZero( pCurve->GOrd, peSigC ) |
+                SymCryptModElementIsZero( pCurve->GOrd, peSigD ) ) )
+        {
+            break;
+        }
+
+        if (piK != NULL)
+        {
+            // piK resulted in 0 signature
+            scError = SYMCRYPT_INVALID_ARGUMENT;
+            goto cleanup;
+        }
+
+        signatureCount++;
+        if ( signatureCount >= SYMCRYPT_MAX_ECDSA_SIGNATURE_COUNT )
+        {
+            // We have not generated a non-zero signature after SYMCRYPT_MAX_ECDSA_SIGNATURE_COUNT attempts;
+            // Something is wrong with the group setup
+            scError = SYMCRYPT_INVALID_ARGUMENT;
+            goto cleanup;
+        }
+    }
 
     // Output c
     scError = SymCryptModElementGetValue( pCurve->GOrd, peSigC, pbSignature, cbSignature / 2, format, pbScratch, cbScratchInternal );
@@ -361,7 +403,6 @@ cleanup:
 }
 
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptEcDsaSign(
@@ -373,10 +414,34 @@ SymCryptEcDsaSign(
     _Out_writes_bytes_( cbSignature )   PBYTE                   pbSignature,
                                         SIZE_T                  cbSignature )
 {
+    SYMCRYPT_ERROR scError = SYMCRYPT_NO_ERROR;
+
+    // Make sure that only the correct flags are set
+    if ( (flags & ~SYMCRYPT_FLAG_ECDSA_NO_TRUNCATION) != 0 )
+    {
+        return SYMCRYPT_INVALID_ARGUMENT;
+    }
+
+    // We must have a private key to perform PCT or signature
+    if( !pKey->hasPrivateKey || !(pKey->fAlgorithmInfo & SYMCRYPT_FLAG_ECKEY_ECDSA) )
+    {
+        return SYMCRYPT_INVALID_ARGUMENT;
+    }
+
+    // If the key has not yet had a PCT performed - perform PCT before first use
+    SYMCRYPT_RUN_KEY_IMPORT_PCT(
+        scError,
+        SymCryptEcDsaPct,
+        pKey,
+        SYMCRYPT_PCT_ECDSA );
+    if( scError != SYMCRYPT_NO_ERROR )
+    {
+        return scError;
+    }
+
     return SymCryptEcDsaSignEx( pKey, pbHashValue, cbHashValue, NULL, format, flags, pbSignature, cbSignature );
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptEcDsaVerify(
@@ -421,6 +486,13 @@ SymCryptEcDsaVerify(
     UINT32  cbRs = 0;
     UINT32  cbX  = 0;
 
+    // Make sure that the key may be used in ECDSA
+    if ( ((pKey->fAlgorithmInfo & SYMCRYPT_FLAG_ECKEY_ECDSA) == 0)  )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
+
     // Make sure that only the correct flags are set
     if ( (flags & ~SYMCRYPT_FLAG_ECDSA_NO_TRUNCATION) != 0 )
     {
@@ -429,9 +501,8 @@ SymCryptEcDsaVerify(
     }
 
     // Calculating the digits for the temporary integer
-    nDigitsInt = max( pCurve->FModDigits, pCurve->GOrdDigits );
-    nDigitsInt = max( nDigitsInt, SymCryptDigitsFromBits( (UINT32)cbHashValue * 8 ) );
-    nDigitsInt = max( nDigitsInt, SymCryptDigitsFromBits( (UINT32)cbSignature * 4 ) );  // pbSignature contains (c,d)
+    nDigitsInt = SYMCRYPT_MAX( pCurve->FModDigits, pCurve->GOrdDigits );
+    nDigitsInt = SYMCRYPT_MAX( nDigitsInt, SymCryptDigitsFromBits( (UINT32)cbSignature * 4 ) );  // pbSignature contains (c,d)
 
     nDigitsMul = SymCryptEcurveDigitsofScalarMultiplier(pCurve);
 
@@ -443,11 +514,11 @@ SymCryptEcDsaVerify(
     cbX  = SymCryptEcurveSizeofFieldElement( pCurve );
 
     cbScratchInternal = SYMCRYPT_SCRATCH_BYTES_FOR_MULTI_SCALAR_ECURVE_OPERATIONS( pCurve, 2 );
-    cbScratchInternal = max( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->GOrdDigits ) );
-    cbScratchInternal = max( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->FModDigits ) );
-    cbScratchInternal = max( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_MODINV( pCurve->GOrdDigits ) );
-    cbScratchInternal = max( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_GETSET_VALUE_ECURVE_OPERATIONS( pCurve ) );
-    cbScratchInternal = max( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS( pCurve ) );
+    cbScratchInternal = SYMCRYPT_MAX( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->GOrdDigits ) );
+    cbScratchInternal = SYMCRYPT_MAX( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->FModDigits ) );
+    cbScratchInternal = SYMCRYPT_MAX( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_MODINV( pCurve->GOrdDigits ) );
+    cbScratchInternal = SYMCRYPT_MAX( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_GETSET_VALUE_ECURVE_OPERATIONS( pCurve ) );
+    cbScratchInternal = SYMCRYPT_MAX( cbScratchInternal, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS( pCurve ) );
 
     //
     // From symcrypt_internal.h we have:
@@ -545,7 +616,11 @@ SymCryptEcDsaVerify(
     // The D value is not secret; it is part of the signature.
     // We mark it public to avoid the use of random blinding, which would require a source of randomness
     // just to verify an ECDSA signature.
-    SymCryptModInv( pCurve->GOrd, peSigD, peSigD, SYMCRYPT_FLAG_DATA_PUBLIC, pbScratch, cbScratchInternal );
+    scError = SymCryptModInv( pCurve->GOrd, peSigD, peSigD, SYMCRYPT_FLAG_DATA_PUBLIC, pbScratch, cbScratchInternal );
+    if( scError != SYMCRYPT_NO_ERROR )
+    {
+        goto cleanup;
+    }
 
     // Truncate the message according to the flags
     scError = SymCryptEcDsaTruncateHash(

@@ -8,7 +8,7 @@
 
 #include "precomp.h"
 
-SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvGeneric()
+SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvGeneric(void)
 {
 #if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
     // Avoid all CPU features except RDRAND and RDSEED
@@ -22,7 +22,7 @@ SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvGeneric()
 
 VOID
 SYMCRYPT_CALL
-SymCryptInitEnvGeneric()
+SymCryptInitEnvGeneric( UINT32 version )
 {
     if( g_SymCryptFlags & SYMCRYPT_FLAG_LIB_INITIALIZED )
     {
@@ -41,7 +41,7 @@ SymCryptInitEnvGeneric()
     // All Neon operations are locked out by the static NeverPresent value.
 #endif    
 
-    SymCryptInitEnvCommon();
+    SymCryptInitEnvCommon( version );
 }
 
 _Analysis_noreturn_
@@ -59,14 +59,8 @@ SymCryptFatalEnvGeneric( UINT32 fatalCode )
     SYMCRYPT_FORCE_WRITE32( &fatalCodeVar, fatalCode );
 
     //
-    // Our first preference is to fastfail,
-    // the second to create an AV, which triggers a Watson report so that we get to 
+    // Create an AV, which can trigger a core dump or Watson report so that we get to 
     // see what is going wrong.
-    //
-    __fastfail( FAST_FAIL_CRYPTO_LIBRARY );
-
-    //
-    // Next we write to the NULL pointer, this causes an AV
     //
     SYMCRYPT_FORCE_WRITE32( (volatile UINT32 *)NULL, fatalCode );
 

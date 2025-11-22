@@ -1,5 +1,5 @@
 //
-// Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
+// Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
 #include "precomp.h"
@@ -25,6 +25,9 @@ testEccEcdsaKats();
 #define SYMCRYPT_ECC_CURVE_NUMSP384T1         "numsP384t1"
 #define SYMCRYPT_ECC_CURVE_NUMSP512T1         "numsP512t1"
 
+#define SYMCRYPT_ECC_CURVE_W25519             "W25519"
+#define SYMCRYPT_ECC_CURVE_W448               "W448"
+
 typedef struct _SYMCRYPT_ECC_CURVES {
     LPSTR                       pszCurveName;
     PCSYMCRYPT_ECURVE_PARAMS    pParams;
@@ -42,6 +45,8 @@ SYMCRYPT_ECC_CURVES rgbInternalCurves[] = {
     { SYMCRYPT_ECC_CURVE_NUMSP384T1,   SymCryptEcurveParamsNumsP384t1,  NULL},
     { SYMCRYPT_ECC_CURVE_NUMSP512T1,   SymCryptEcurveParamsNumsP512t1,  NULL},
     { SYMCRYPT_ECC_CURVE_25519,        SymCryptEcurveParamsCurve25519,  NULL},
+    { SYMCRYPT_ECC_CURVE_W25519,       SymCryptEcurveParamsW25519,      NULL},
+    { SYMCRYPT_ECC_CURVE_W448,         SymCryptEcurveParamsW448,        NULL},
 };
 
 #define NUM_OF_INTERNAL_CURVES       (sizeof(rgbInternalCurves) / sizeof(rgbInternalCurves[0]))
@@ -53,24 +58,42 @@ SYMCRYPT_ECC_CURVES rgbInternalCurves[] = {
 ////////////////////////////////////////////////////////////////////
 
 #define SYMCRYPT_ECC_SHA1                     "SHA1"
+#define SYMCRYPT_ECC_SHA224                   "SHA224"
 #define SYMCRYPT_ECC_SHA256                   "SHA256"
 #define SYMCRYPT_ECC_SHA384                   "SHA384"
 #define SYMCRYPT_ECC_SHA512                   "SHA512"
 
+BOOL getHashAlgorithm(LPCSTR pszHashName, ULONGLONG line, PCSYMCRYPT_HASH* ppHash)
+{
+    if( strcmp( pszHashName, SYMCRYPT_ECC_SHA1 ) == 0 )
+    {
+        *ppHash = ScDispatchSymCryptSha1Algorithm;
+    }
+    else if( strcmp( pszHashName, SYMCRYPT_ECC_SHA224 ) == 0 )
+    {
+        dprint( "Ecdsa record at line %lld is skipped due to unsupported hash function (%s).\n", line, pszHashName );
+        return FALSE;
+    }
+    else if( strcmp( pszHashName, SYMCRYPT_ECC_SHA256 ) == 0 )
+    {
+        *ppHash = ScDispatchSymCryptSha256Algorithm;
+    }
+    else if( strcmp( pszHashName, SYMCRYPT_ECC_SHA384 ) == 0 )
+    {
+        *ppHash = ScDispatchSymCryptSha384Algorithm;
+    }
+    else if( strcmp( pszHashName, SYMCRYPT_ECC_SHA512 ) == 0 )
+    {
+        *ppHash = ScDispatchSymCryptSha512Algorithm;
+    }
+    else
+    {
+        dprint( "Assuming no hash function at line %lld for unknown hash function (%s).\n", line, pszHashName );
+        *ppHash = NULL;
+    }
 
-typedef struct _SYMCRYPT_ECC_HASH_ALGORITHMS {
-    LPSTR                       pszHashName;
-    PCSYMCRYPT_HASH             pHash;
-} SYMCRYPT_ECC_HASH_ALGORITHMS;
-
-SYMCRYPT_ECC_HASH_ALGORITHMS rgbHashAlgorithms[] = {
-    { SYMCRYPT_ECC_SHA1,        SymCryptSha1Algorithm   },
-    { SYMCRYPT_ECC_SHA256,      SymCryptSha256Algorithm },
-    { SYMCRYPT_ECC_SHA384,      SymCryptSha384Algorithm },
-    { SYMCRYPT_ECC_SHA512,      SymCryptSha512Algorithm },
-};
-
-#define NUM_OF_ECC_HASH_ALGORITHMS       (sizeof(rgbHashAlgorithms) / sizeof(rgbHashAlgorithms[0]))
+    return TRUE;
+}
 
 ////////////////////////////////////////////////////////////////////
 //
@@ -111,6 +134,7 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     PCSYMCRYPT_INT      piTable[MULTIMUL_POINTS] = { 0 };
 
     PSYMCRYPT_ECKEY     pkKey1 = NULL;
+    PSYMCRYPT_ECKEY     pkKey2 = NULL;
 
     // Temporary Object sizes
     SIZE_T  cbEcpointSize = 0;
@@ -128,6 +152,7 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     //  ScratchMultiMul:Scratch space for the multi multiplication operation
     //  ScratchGetSet:  Scratch space for get/set value ecpoint operations
     //  Signature:      Space for the signature (and the get/set value operations)
+    //  AgreedSecret1/2:Space for the agreed secrets - overlaps with signature
     //  Buffer:         Space for the get/set value operations (and or printing points)
     //  WorkSpace:      Entire allocated memory
     PBYTE   pbScratch = NULL;
@@ -140,14 +165,15 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     SIZE_T  cbScratchGetSet = 0;
     PBYTE   pbSignature = NULL;
     SIZE_T  cbSignature = 0;
+    PBYTE   pbAgreedSecret1 = NULL;
+    PBYTE   pbAgreedSecret2 = NULL;
+    SIZE_T  cbAgreedSecret = 0;
     PBYTE   pbBuffer = NULL;
     SIZE_T  cbBuffer = 0;
     PBYTE   pbWorkSpace = NULL;
     SIZE_T  cbWorkSpace = 0;
 
     PBYTE   pCurr;
-
-    INT64   nAllocs = 0;
 
     UINT32  msbCounter = NUM_OF_HIGH_BIT_RESTRICTION_ITERATIONS;
     UINT32  msbNumOfBits = 0;
@@ -162,15 +188,16 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     cbIntLargeSize = SymCryptSizeofIntFromDigits( SymCryptEcurveDigitsofScalarMultiplier(pCurve) + 1 );
     cbEckeySize = SymCryptSizeofEckeyFromCurve( pCurve );
 
-    cbScratch = max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS( pCurve ), 
+    cbScratch = SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS( pCurve ),
                 SYMCRYPT_SCRATCH_BYTES_FOR_INT_DIVMOD( SymCryptEcurveDigitsofScalarMultiplier(pCurve) + 1, pCurve->GOrdDigits ) );
     cbScratchMul = SYMCRYPT_SCRATCH_BYTES_FOR_SCALAR_ECURVE_OPERATIONS( pCurve );
     cbScratchMultiMul = SYMCRYPT_SCRATCH_BYTES_FOR_MULTI_SCALAR_ECURVE_OPERATIONS( pCurve, MULTIMUL_POINTS );
     cbScratchGetSet = SYMCRYPT_SCRATCH_BYTES_FOR_GETSET_VALUE_ECURVE_OPERATIONS( pCurve );
     cbSignature = 2 * SymCryptEcurveSizeofFieldElement( pCurve );
+    cbAgreedSecret = SymCryptEcurveSizeofFieldElement( pCurve );
     cbBuffer = cbSignature; // This is due to the fact that ecdsa and XY format both use 2 field elements
 
-    cbWorkSpace = 3 * cbEcpointSize + 2 * cbIntScalarSize + cbIntLargeSize + cbEckeySize + cbScratch + cbScratchMul + cbScratchMultiMul + cbScratchGetSet + cbSignature + cbBuffer;
+    cbWorkSpace = 3 * cbEcpointSize + 2 * cbIntScalarSize + cbIntLargeSize + 2 * cbEckeySize + cbScratch + cbScratchMul + cbScratchMultiMul + cbScratchGetSet + cbSignature + cbBuffer;
 
     // =================================
     // Allocation
@@ -181,7 +208,6 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     // =================================
     // Object creation
 
-    nAllocs = g_nAllocs;
     pCurr = pbWorkSpace;
 
     poP1 = SymCryptEcpointCreate( pCurr, cbEcpointSize, pCurve );
@@ -205,11 +231,15 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     pCurr += cbIntScalarSize;
 
     piLarge = SymCryptIntCreate( pCurr, cbIntLargeSize, SymCryptEcurveDigitsofScalarMultiplier(pCurve) + 1 );
-    CHECK( piLarge != NULL, "S2 allocation failed" );
+    CHECK( piLarge != NULL, "Large int allocation failed" );
     pCurr += cbIntLargeSize;
 
     pkKey1 = SymCryptEckeyCreate( pCurr, cbEckeySize, pCurve );
-    CHECK( pkKey1 != NULL, "Eckey allocation failed" );
+    CHECK( pkKey1 != NULL, "Eckey 1 allocation failed" );
+    pCurr += cbEckeySize;
+
+    pkKey2 = SymCryptEckeyCreate( pCurr, cbEckeySize, pCurve );
+    CHECK( pkKey2 != NULL, "Eckey 2 allocation failed" );
     pCurr += cbEckeySize;
 
     pbScratch = pCurr;
@@ -217,6 +247,8 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     pbScratchMultiMul = pbScratchMul + cbScratchMul;
     pbScratchGetSet = pbScratchMultiMul + cbScratchMultiMul;
     pbSignature = pbScratchGetSet + cbScratchGetSet;
+    pbAgreedSecret1 = pbSignature;
+    pbAgreedSecret2 = pbSignature + cbAgreedSecret;
     pbBuffer = pbSignature + cbSignature;
 
     poTable[0] = poP1;
@@ -319,6 +351,21 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     vprint( g_verbose, "Success\n");
 
     // =================================
+    vprint( g_verbose, "    %-41s", "P3 := 8 * P1 + 0 * P2" );
+    vprint( g_verbose, " %-40s", "SymCryptEcpointMultiScalarMul");
+    SymCryptIntSetValueUint32( 8, piSc1 );
+    SymCryptIntSetValueUint32( 0, piSc2 );
+    scError = SymCryptEcpointMultiScalarMul( pCurve, piTable, poTable, MULTIMUL_POINTS, SYMCRYPT_FLAG_DATA_PUBLIC, poP3, pbScratchMultiMul, cbScratchMultiMul );
+
+    CHECK( scError == SYMCRYPT_NO_ERROR, "Multi Scalar Multiplying failed" );
+    CHECK( SymCryptEcpointOnCurve( pCurve, poP3, pbScratch, cbScratch ), "Multiplied point not on curve!");
+    vprint( g_verbose, "Success\n");
+
+    vprint( g_verbose, "    %-41s", "Checking P2 == P3 ?" );
+    vprint( g_verbose, " %-40s", "SymCryptEcpointIsEqual");
+    CHECK( SymCryptEcpointIsEqual( pCurve, poP2, poP3, 0, pbScratch, cbScratch ), " P2 != P3 " );
+    vprint( g_verbose, "Success\n");
+
     vprint( g_verbose, "    %-41s", "P3 := 6 * P1 + 17 * P2" );
     vprint( g_verbose, " %-40s", "SymCryptEcpointMultiScalarMul");
     SymCryptIntSetValueUint32( 6, piSc1 );
@@ -343,7 +390,6 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     vprint( g_verbose, "    %-41s", "P2 := rand1 * G" );
     vprint( g_verbose, " %-40s", "SymCryptEcpointSetRandom");
     SymCryptEcpointSetRandom( pCurve, piSc1, poP2, pbScratchMul, cbScratchMul );
-
     CHECK( SymCryptEcpointOnCurve( pCurve, poP2, pbScratch, cbScratch ), "Random not on curve!");
     vprint( g_verbose, "Success\n");
 
@@ -351,7 +397,6 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     vprint( g_verbose, "    %-41s", "P3 := rand2 * G" );
     vprint( g_verbose, " %-40s", "SymCryptEcpointSetRandom");
     SymCryptEcpointSetRandom( pCurve, piSc2, poP3, pbScratchMul, cbScratchMul );
-
     CHECK( SymCryptEcpointOnCurve( pCurve, poP3, pbScratch, cbScratch ), "Random not on curve!");
     vprint( g_verbose, "Success\n");
 
@@ -415,13 +460,13 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     CHECK( SymCryptEcpointOnCurve( pCurve, poP2, pbScratch, cbScratch ), "Random point not on curve!");
 
     SymCryptEcpointAdd( pCurve, poP2, poP3, poP3, 0, pbScratch, cbScratch );
-    CHECK( SymCryptEcpointOnCurve( pCurve, poP3, pbScratch, cbScratch ), "Random point not on curve!");
+    CHECK( SymCryptEcpointOnCurve( pCurve, poP3, pbScratch, cbScratch ), "P2 + P3 not on curve!");
 
     scError = SymCryptEcpointScalarMul( pCurve, piSc1, poP2, 0, poP2, pbScratchMul, cbScratchMul );  // Multiply by -1
     CHECK( scError == SYMCRYPT_NO_ERROR, "Scalar Multiplying P2 failed" );
 
     SymCryptEcpointAdd( pCurve, poP2, poP3, poP3, 0, pbScratch, cbScratch );
-    CHECK( SymCryptEcpointOnCurve( pCurve, poP3, pbScratch, cbScratch ), "Random point not on curve!");
+    CHECK( SymCryptEcpointOnCurve( pCurve, poP3, pbScratch, cbScratch ), "P2 + P3 not on curve!");
 
     scError = SymCryptEcpointGetValue(pCurve, poP3, SYMCRYPT_NUMBER_FORMAT_MSB_FIRST, SYMCRYPT_ECPOINT_FORMAT_XY, pbBuffer, cbBuffer, g_rng.uint32() & SYMCRYPT_FLAG_DATA_PUBLIC, pbScratchGetSet, cbScratchGetSet);
     CHECK( scError == SYMCRYPT_NO_ERROR, "SymCryptEcpointGetValue failed" );
@@ -452,13 +497,6 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     vprint( g_verbose, "Success\n");
 
     // =================================
-    // =================================
-    // Check that no extra allocations happened until here
-    CHECK( g_nAllocs == nAllocs, "Undesired allocation" );
-    // =================================
-    // =================================
-
-    // =================================
     vprint( g_verbose, "    %-41s", "Set K1 to a uniformly random eckey" );
     vprint( g_verbose, " %-40s", "SymCryptEckeySetRandom");
 
@@ -474,7 +512,7 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
 
     do
     {
-        scError = SymCryptEckeySetRandom( 0, pkKey1 );
+        scError = SymCryptEckeySetRandom( SYMCRYPT_FLAG_ECKEY_ECDSA | SYMCRYPT_FLAG_ECKEY_ECDH, pkKey1 );
         CHECK( scError == SYMCRYPT_NO_ERROR, "Set random key failed" );
 
         CHECK( SymCryptEcpointOnCurve( pCurve, pkKey1->poPublicKey, pbScratch, cbScratch), "Public key not on curve");
@@ -498,6 +536,21 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
 
         CHECK5( (msbActual & msbMask) == msbValue,
         "High bit restriction failed. \n  Recvd: 0x%04X\n  Mask : 0x%04X\n  Bits : 0x%04X", msbActual, msbMask, msbValue);
+
+        // Check roundtrip through EckeyGetValue and EckeySetValue preserves private key without error
+        scError = SymCryptEckeySetValue(
+                            pbSignature,
+                            SymCryptEckeySizeofPrivateKey( pkKey1 ),
+                            NULL,
+                            0,
+                            SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
+                            SYMCRYPT_ECPOINT_FORMAT_XY,
+                            SYMCRYPT_FLAG_ECKEY_ECDSA | SYMCRYPT_FLAG_ECKEY_ECDH,
+                            pkKey2 );
+        CHECK( scError == SYMCRYPT_NO_ERROR, "SymCryptEckeySetValue private key failed" );
+
+        CHECK( SymCryptIntIsEqual(pkKey1->piPrivateKey, pkKey2->piPrivateKey), " pkKey1->piPrivateKey != pkKey2->piPrivateKey " );
+        CHECK( SymCryptEcpointIsEqual(pCurve, pkKey1->poPublicKey, pkKey2->poPublicKey, 0, pbScratch, cbScratch), " pkKey1->poPublicKey != pkKey2->poPublicKey " );
 
         msbCounter--;
     } while ((msbCounter > 0) && (msbNumOfBits>0));
@@ -572,27 +625,52 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     vprint( g_verbose, "Success\n");
 
     // =================================
+    scError = SymCryptEckeySetRandom( SYMCRYPT_FLAG_ECKEY_ECDH, pkKey2 );
+    CHECK( scError == SYMCRYPT_NO_ERROR, "Set random key failed" );
+
     vprint( g_verbose, "    %-41s", "ECDH Algorithm" );
     vprint( g_verbose, " %-40s", "SymCryptEcDhSecretAgreement");
     scError = SymCryptEcDhSecretAgreement(
                     pkKey1,
-                    pkKey1,
+                    pkKey2,
                     SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
                     0,
-                    pbSignature,
-                    cbSignature/2 );
+                    pbAgreedSecret1,
+                    cbAgreedSecret );
 
     CHECK( scError == SYMCRYPT_NO_ERROR, "SymCryptEcDhSecretAgreement failed" );
     vprint( g_verbose, "Success\n");
 
+    scError = SymCryptEcDhSecretAgreement(
+                    pkKey2,
+                    pkKey1,
+                    SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
+                    0,
+                    pbAgreedSecret2,
+                    cbAgreedSecret );
+
+    CHECK( scError == SYMCRYPT_NO_ERROR, "SymCryptEcDhSecretAgreement failed" );
+    vprint( g_verbose, "Success\n");
+
+    CHECK( memcmp( pbAgreedSecret1, pbAgreedSecret2, cbAgreedSecret ) == 0, "SymCryptEcDhSecretAgreement is inconsistent between two parties");
+    vprint( g_verbose, "Success\n");
+
     // =================================
-    // =================================
-    // Check that only the necessary extra allocations happened:
-    // NUM_OF_HIGH_BIT_RESTRICTION_ITERATIONS* (SymCryptEckeySetRandom, SymCryptEckeyGetValue) if msbNumOfBits is non zero
-    // SymCryptEcDsaSign x2, SymCryptEcDsaVerify x2, SymCryptEcDhSecretAgreement
-    CHECK( g_nAllocs == nAllocs + 5 + 2*(msbNumOfBits?NUM_OF_HIGH_BIT_RESTRICTION_ITERATIONS:1), "Undesired allocation" );
-    // =================================
-    // =================================
+    SymCryptEcpointSetZero(pCurve, pkKey1->poPublicKey, pbScratchMul, cbScratchMul);
+
+    vprint( g_verbose, "    %-41s", "Verify signature with 0 public key" );
+    vprint( g_verbose, " %-40s", "SymCryptEcDsaVerify");
+    scError = SymCryptEcDsaVerify(
+                    pkKey1,
+                    pbHashValue,
+                    sizeof(pbHashValue),
+                    pbSignature,
+                    cbSignature,
+                    SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
+                    0 );
+
+    CHECK( scError != SYMCRYPT_NO_ERROR, "SymCryptEcDsaVerify should have failed but succeeded" );
+    vprint( g_verbose, "Success\n");
 
     // =================================
     vprint( g_verbose, "    %-41s", "Wiping and freeing stuff ");
@@ -603,16 +681,99 @@ testEccArithmetic( _In_ PCSYMCRYPT_ECURVE pCurve )
     vprint( g_verbose, "Success\n");
 }
 
+BOOL
+testCurveParamsValid( PSYMCRYPT_ECURVE_PARAMS pParams, SIZE_T cbData )
+{
+    // We test whether the parameters are valid by trying them with random data
+    // several times.
+    // Exception: we set the cofactor to 1 so that it is a power of 2
+
+    BOOL res = FALSE;
+
+    for( int i=0; i<1000; i++ )
+    {
+        // Add random data + set cofactor to 1
+        GENRANDOM( (PBYTE)(pParams + 1), (UINT32)cbData - sizeof( *pParams ) );
+        ((PBYTE)(pParams + 1))[5 * pParams->cbFieldLength + pParams->cbSubgroupOrder] = 1;
+
+        PSYMCRYPT_ECURVE eCurve = SymCryptEcurveAllocate( pParams, 0 );
+        if( eCurve != NULL )
+        {
+            SymCryptEcurveFree( eCurve );
+            res = TRUE;
+            break;
+        }
+    }
+    return res;
+}
+
+
+VOID
+testBadCurveParams()
+{
+    const SIZE_T cbBuf = 1 << 20;
+    PVOID pBuf = malloc( cbBuf );
+
+    CHECK( pBuf != NULL, "Out of memory" );
+
+    PSYMCRYPT_ECURVE_PARAMS pParams = (PSYMCRYPT_ECURVE_PARAMS) pBuf;
+
+    GENRANDOM( pBuf, cbBuf );
+
+    pParams->version = 1;
+    pParams->type = SYMCRYPT_ECURVE_TYPE_SHORT_WEIERSTRASS;
+    pParams->algId = SYMCRYPT_ECURVE_GEN_ALG_ID_NULL;
+    pParams->cbFieldLength = 32;
+    pParams->cbSubgroupOrder = 32;
+    pParams->cbCofactor = 1;
+    pParams->cbSeed = 0;
+
+    CHECK( testCurveParamsValid( pParams, cbBuf ), "Params invalid" );
+
+    pParams->cbFieldLength = 128;
+    CHECK( testCurveParamsValid( pParams, cbBuf ), "Params invalid" );
+
+    pParams->cbFieldLength = 129;
+    CHECK( !testCurveParamsValid( pParams, cbBuf ), "Params valid" );
+
+    pParams->cbFieldLength = 32;
+
+    pParams->cbSubgroupOrder = 130;  // Can be 64 + 1 as subgroup can be larger than the field.
+    CHECK( !testCurveParamsValid( pParams, cbBuf ), "Params valid" );
+
+    pParams->cbSubgroupOrder = 32;
+
+    pParams->cbCofactor = 3;
+    CHECK( !testCurveParamsValid( pParams, cbBuf ), "Params valid" );
+    pParams->cbCofactor = 1;
+
+    pParams->cbSeed = 256;
+    CHECK( testCurveParamsValid( pParams, cbBuf ), "Params invalid" );
+    pParams->cbSeed = 257;
+    CHECK( !testCurveParamsValid( pParams, cbBuf ), "Params valid" );
+    pParams->cbSeed = 0;
+
+    CHECK( testCurveParamsValid( pParams, cbBuf ), "Params invalid" );
+
+    if( pBuf != NULL )
+    {
+        free( pBuf );
+        pBuf = NULL;
+    }
+}
+
+static UINT32 skippedKats = 0;
+
 VOID
 testEcc()
 {
-
     static BOOL hasRun = FALSE;
 
     PSYMCRYPT_ECURVE            pCurve  = NULL;
     PCSYMCRYPT_ECURVE_PARAMS    pParams = NULL;
 
     INT64 nAllocs = 0;
+    INT64 nOutstandingAllocs = 0;
 
     if( hasRun )
     {
@@ -628,27 +789,28 @@ testEcc()
 
     iprint( "    Elliptic Curve Crypto\n" );
 
-    CHECK( g_nOutstandingCheckedAllocs == 0, "Memory leak" );
+    nOutstandingAllocs = SYMCRYPT_INTERNAL_VOLATILE_READ64(&g_nOutstandingCheckedAllocs);
+    CHECK3( nOutstandingAllocs  == 0, "Memory leak %d", nOutstandingAllocs );
 
     iprint("    > Functional testing");
     vprint(!g_verbose, ": ");
     vprint(g_verbose, "\n");
 
-    for (int i=0; i<NUM_OF_INTERNAL_CURVES; i++)
+    for (SIZE_T i=0; i<NUM_OF_INTERNAL_CURVES; i++)
     {
         vprint( g_verbose, "    > Curve ");
         iprint("%s", rgbInternalCurves[i].pszCurveName );
-        if (i<NUM_OF_INTERNAL_CURVES-1)
+        if (i+1<NUM_OF_INTERNAL_CURVES)
         {
             vprint(!g_verbose, ", ");
         }
         vprint(g_verbose, "\n");
 
-        nAllocs = g_nAllocs;
+        nAllocs = SYMCRYPT_INTERNAL_VOLATILE_READ64(&g_nAllocs);
         pParams = rgbInternalCurves[i].pParams;
         pCurve = SymCryptEcurveAllocate( pParams, 0 );
         CHECK( pCurve != NULL, "Curve allocation failed" );
-        CHECK( g_nAllocs == nAllocs + 2, "Undesired allocation" );
+        CHECK( (INT64) SYMCRYPT_INTERNAL_VOLATILE_READ64(&g_nAllocs) == nAllocs + 2, "Undesired allocation" );
 
         rgbInternalCurves[i].pCurve = pCurve;
 
@@ -676,14 +838,55 @@ testEcc()
     }
 
     iprint("\n    > KAT testing       : ");
+    skippedKats = 0;
     testEccEcdsaKats();
+    print( "    %d skipped KATS\n", skippedKats);
 
-    for (int i=0; i<NUM_OF_INTERNAL_CURVES; i++)
+    for (SIZE_T i=0; i<NUM_OF_INTERNAL_CURVES; i++)
     {
         SymCryptEcurveFree( rgbInternalCurves[i].pCurve );
     }
 
-    CHECK3( g_nOutstandingCheckedAllocs == 0, "Memory leak, %d outstanding", (unsigned) g_nOutstandingCheckedAllocs );
+    nOutstandingAllocs = SYMCRYPT_INTERNAL_VOLATILE_READ64(&g_nOutstandingCheckedAllocs);
+    CHECK3( nOutstandingAllocs == 0, "Memory leak, %d outstanding", nOutstandingAllocs );
+
+    if (g_dynamicSymCryptModuleHandle != NULL)
+    {
+        print("    testEccEcdsaKats dynamic\n");
+        g_useDynamicFunctionsInTestCall = TRUE;
+
+        for (SIZE_T i=0; i<NUM_OF_INTERNAL_CURVES; i++)
+        {
+            vprint( g_verbose, "    > Curve ");
+            iprint("%s", rgbInternalCurves[i].pszCurveName );
+            if (i+1<NUM_OF_INTERNAL_CURVES)
+            {
+                vprint(!g_verbose, ", ");
+            }
+            vprint(g_verbose, "\n");
+
+            nAllocs = SYMCRYPT_INTERNAL_VOLATILE_READ64(&g_nAllocs);
+            pParams = rgbInternalCurves[i].pParams;
+            pCurve = ScDispatchSymCryptEcurveAllocate( pParams, 0 );
+            CHECK( pCurve != NULL, "Curve allocation failed" );
+            CHECK( (INT64) SYMCRYPT_INTERNAL_VOLATILE_READ64(&g_nAllocs) == nAllocs, "Undesired allocation" );
+
+            rgbInternalCurves[i].pCurve = pCurve;
+        }
+
+        skippedKats = 0;
+        testEccEcdsaKats();
+        print( "    %d skipped KATS\n", skippedKats);
+
+        for (SIZE_T i=0; i<NUM_OF_INTERNAL_CURVES; i++)
+        {
+            ScDispatchSymCryptEcurveFree( rgbInternalCurves[i].pCurve );
+        }
+        g_useDynamicFunctionsInTestCall = FALSE;
+    }
+
+    // Put under an if( algorithm_present ) when we refactor this
+    testBadCurveParams();
 
     iprint("\n");
 }
@@ -768,29 +971,50 @@ testEcdsaVerify(
     PSYMCRYPT_ECKEY pkPublic = NULL;
 
     BYTE pbHashValue[SYMCRYPT_SHA512_RESULT_SIZE] = { 0 };
+    PCBYTE pbDigest = NULL;
+    UINT32 cbDigest = 0;
     BYTE pbSignature[2 * ((SYMCRYPT_BITSIZE_P521 + 7)/8)] = { 0 };             // big enough to hold any signature
     BYTE pbPublicKey[2 * ((SYMCRYPT_BITSIZE_P521 + 7)/8)] = { 0 };             // or the X,Y coordinates of a public key
 
+    if( !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeyAllocate) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptHash) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptHashResultSize) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeySetValue) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEcDsaVerify) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeyFree) )
+    {
+        skippedKats++;
+        return;
+    }
+
     // Allocate the public key
-    pkPublic = SymCryptEckeyAllocate( pCurve );
+    pkPublic = ScDispatchSymCryptEckeyAllocate( pCurve );
     CHECK3( pkPublic!=NULL, "Failure to allocate public key for ECDSA record at line %lld", line );
 
     // Hash the message
-    CHECK3( SYMCRYPT_SHA512_RESULT_SIZE >= pHash->resultSize, "Hash result too big for ECDSA record at line %lld", line );
-    SymCryptHash( pHash, pbMsg, cbMsg, pbHashValue, pHash->resultSize );
+    if( pHash != NULL )
+    {
+        cbDigest = (UINT32) ScDispatchSymCryptHashResultSize( pHash );
+        CHECK3( SYMCRYPT_SHA512_RESULT_SIZE >= cbDigest, "Hash result too big for ECDSA record at line %lld", line );
+        ScDispatchSymCryptHash( pHash, pbMsg, cbMsg, pbHashValue, cbDigest );
+        pbDigest = &pbHashValue[0];
+    } else {
+        pbDigest = pbMsg;
+        cbDigest = (UINT32) cbMsg;
+    }
 
     // Set the public key
     memcpy(pbPublicKey, pbQx, cbQx);
     memcpy(pbPublicKey+cbQx, pbQy, cbQy);
 
-    scError = SymCryptEckeySetValue(
-                NULL,
+    scError = ScDispatchSymCryptEckeySetValue(
+                nullptr,
                 0,
                 pbPublicKey,
                 cbQx + cbQy,
                 SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
                 SYMCRYPT_ECPOINT_FORMAT_XY,
-                0,
+                SYMCRYPT_FLAG_ECKEY_ECDSA,
                 pkPublic );
     CHECK3( scError == SYMCRYPT_NO_ERROR, "Public key set value failed for ECDSA record at line %lld", line );
 
@@ -799,10 +1023,10 @@ testEcdsaVerify(
     memcpy(pbSignature+cbR, pbS, cbS);
 
     // Verify
-    scError = SymCryptEcDsaVerify(
+    scError = ScDispatchSymCryptEcDsaVerify(
                         pkPublic,
-                        pbHashValue,
-                        pHash->resultSize,
+                        pbDigest,
+                        cbDigest,
                         pbSignature,
                         cbR + cbS,
                         SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
@@ -817,8 +1041,12 @@ testEcdsaVerify(
     {
         CHECK3( scError == SYMCRYPT_SIGNATURE_VERIFICATION_FAILURE, "Wrong EcDsaVerify result for ECDSA record at line %lld", line );
     }
+    else
+    {
+        CHECK3( scError == SYMCRYPT_NO_ERROR, "Wrong EcDsaVerify result for ECDSA record at line %lld", line );
+    }
 
-    SymCryptEckeyFree( pkPublic );
+    ScDispatchSymCryptEckeyFree( pkPublic );
 
     dprint("EcdsaVerify dataset at line %lld was successful.\n", line);
 }
@@ -856,37 +1084,60 @@ testEcdsaSign(
     PSYMCRYPT_INT   piK = NULL;
 
     BYTE pbHashValue[SYMCRYPT_SHA512_RESULT_SIZE] = { 0 };
+    PCBYTE pbDigest = NULL;
+    UINT32 cbDigest = 0;
     BYTE pbSignature[2 * ((SYMCRYPT_BITSIZE_P521 + 7)/8)] = { 0 };             // big enough to hold any signature
 
+    if (!SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeyAllocate) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptIntAllocate) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptHash) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeySetValue) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeyGetValue) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeySizeofPublicKey) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptIntSetValue) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEcDsaSignEx) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEcurveSizeofScalarMultiplier) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptIntFree) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeyFree) )
+    {
+        skippedKats++;
+        return;
+    }
+
     // Allocate the private key and the random exponent K
-    pkPrivate = SymCryptEckeyAllocate( pCurve );
+    pkPrivate = ScDispatchSymCryptEckeyAllocate( pCurve );
     CHECK3( pkPrivate!=NULL, "Failure to allocate private key for ECDSA record at line %lld", line );
-    piK = SymCryptIntAllocate( SymCryptEcurveDigitsofScalarMultiplier(pCurve) );
+    piK = ScDispatchSymCryptIntAllocate( ScDispatchSymCryptEcurveDigitsofScalarMultiplier(pCurve) );
     CHECK3( piK!=NULL, "Failure to allocate random exponent K for ECDSA record at line %lld", line );
 
     // Hash the message
-    CHECK3( SYMCRYPT_SHA512_RESULT_SIZE >= pHash->resultSize, "Hash result too big for ECDSA record at line %lld", line );
-    SymCryptHash( pHash, pbMsg, cbMsg, pbHashValue, pHash->resultSize );
+    CHECK( pHash != NULL, "Unsupported test case for ECDSA sign")
+
+    pbDigest = &pbHashValue[0];
+    cbDigest = (UINT32) ScDispatchSymCryptHashResultSize( pHash );
+
+    CHECK3( SYMCRYPT_SHA512_RESULT_SIZE >= cbDigest, "Hash result too big for ECDSA record at line %lld", line );
+    ScDispatchSymCryptHash( pHash, pbMsg, cbMsg, pbHashValue, cbDigest );
 
     // Set the new key
-    scError = SymCryptEckeySetValue(
+    scError = ScDispatchSymCryptEckeySetValue(
                 pbD,
                 cbD,
-                NULL,
+                nullptr,
                 0,
                 SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
                 SYMCRYPT_ECPOINT_FORMAT_XY,
-                0,
+                SYMCRYPT_FLAG_ECKEY_ECDSA,
                 pkPrivate );
     CHECK3( scError == SYMCRYPT_NO_ERROR, "Private key set value failed for ECDSA record at line %lld", line );
 
     // Check if the public key created is correct
-    scError = SymCryptEckeyGetValue(
+    scError = ScDispatchSymCryptEckeyGetValue(
                 pkPrivate,
-                NULL,
+                nullptr,
                 0,
                 pbSignature,
-                SymCryptEckeySizeofPublicKey( pkPrivate, SYMCRYPT_ECPOINT_FORMAT_XY ),
+                ScDispatchSymCryptEckeySizeofPublicKey( pkPrivate, SYMCRYPT_ECPOINT_FORMAT_XY ),
                 SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
                 SYMCRYPT_ECPOINT_FORMAT_XY,
                 0 );
@@ -896,27 +1147,27 @@ testEcdsaSign(
     CHECK3( memcmp( pbQy, pbSignature + cbQx, cbQy ) == 0, "Qy doesn't match for ECDSA record at line %lld", line );
 
     // Set the modelement K
-    scError = SymCryptIntSetValue( pbK, cbK, SYMCRYPT_NUMBER_FORMAT_MSB_FIRST, piK );
+    scError = ScDispatchSymCryptIntSetValue( pbK, cbK, SYMCRYPT_NUMBER_FORMAT_MSB_FIRST, piK );
     CHECK3( scError == SYMCRYPT_NO_ERROR, "Modelement K failed to set value for ECDSA record at line %lld", line );
 
     // Sign
-    scError = SymCryptEcDsaSignEx(
+    scError = ScDispatchSymCryptEcDsaSignEx(
                         pkPrivate,
-                        pbHashValue,
-                        pHash->resultSize,
+                        pbDigest,
+                        cbDigest,
                         piK,
                         SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
                         0,
                         pbSignature,
-                        2 * SymCryptEcurveSizeofScalarMultiplier( pCurve ) );
+                        2 * ScDispatchSymCryptEcurveSizeofScalarMultiplier( pCurve ) );
     CHECK3( scError == SYMCRYPT_NO_ERROR, "EcDsaSignEx failed for ECDSA record at line %lld", line );
 
     // Check the result
     CHECK3( memcmp( pbR, pbSignature, cbR ) == 0, "Test vector R doesn't match for ECDSA record at line %lld", line );
     CHECK3( memcmp( pbS, pbSignature + cbR, cbS ) == 0, "Test vector S doesn't match for ECDSA record at line %lld", line );
 
-    SymCryptIntFree( piK );
-    SymCryptEckeyFree( pkPrivate );
+    ScDispatchSymCryptIntFree( piK );
+    ScDispatchSymCryptEckeyFree( pkPrivate );
 }
 
 VOID
@@ -937,10 +1188,10 @@ testEcdh(
     _In_reads_( cbQyb )
         PCBYTE                  pbQyb,
         SIZE_T                  cbQyb,
-    _In_reads_( cbSS )
+    _In_reads_( cbSs )
         PCBYTE                  pbSs,
         SIZE_T                  cbSs,
-        UINT32                  flags,
+        UINT32                  secretAgreementFlags,
         LONGLONG                line)
 {
     SYMCRYPT_ERROR scError = SYMCRYPT_NO_ERROR;
@@ -950,32 +1201,65 @@ testEcdh(
 
     BYTE pbSharedSecret[((SYMCRYPT_BITSIZE_P521 + 7)/8)] = { 0 };   // big enough to hold any shared secret
     BYTE pbPublicKey[2 * ((SYMCRYPT_BITSIZE_P521 + 7)/8)] = { 0 };  // or the X,Y coordinates of a public key
+    PCBYTE pbOptPublicKey = NULL;
+    SIZE_T cbOptPublicKey = 0;
+    BYTE randByte = g_rng.byte();
+    UINT32 flags = SYMCRYPT_FLAG_ECKEY_ECDH;
+
+    if (!SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeyAllocate) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeySetValue) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeyGetValue) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeySizeofPublicKey) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEcDhSecretAgreement) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEcurveSizeofFieldElement) ||
+        !SCTEST_LOOKUP_DISPATCHSYM(SymCryptEckeyFree) )
+    {
+        skippedKats++;
+        return;
+    }
 
     // Allocate the keys
-    pkPrivate = SymCryptEckeyAllocate( pCurve );
+    pkPrivate = ScDispatchSymCryptEckeyAllocate( pCurve );
     CHECK3( pkPrivate!=NULL, "Failure to allocate private key for ECDH record at line %lld", line );
-    pkPublic = SymCryptEckeyAllocate( pCurve );
+    pkPublic = ScDispatchSymCryptEckeyAllocate( pCurve );
     CHECK3( pkPublic!=NULL, "Failure to allocate public key for ECDH record at line %lld", line );
 
-    // Set the private key
-    scError = SymCryptEckeySetValue(
+    // Set the private and public key for party A
+    // Randomize flags and whether we provide the public key to exercise more codepaths
+    if (randByte & 0x1)
+    {
+        flags |= SYMCRYPT_FLAG_KEY_NO_FIPS;
+    }
+    if (randByte & 0x2)
+    {
+        flags |= SYMCRYPT_FLAG_ECKEY_ECDSA;
+    }
+    if (randByte & 0x4)
+    {
+        memcpy(pbPublicKey, pbQxa, cbQxa);
+        memcpy(pbPublicKey+cbQxa, pbQya, cbQya);
+        pbOptPublicKey = pbPublicKey;
+        cbOptPublicKey = cbQxa + cbQya;
+    }
+
+    scError = ScDispatchSymCryptEckeySetValue(
                 pbSa,
                 cbSa,
-                NULL,
-                0,
+                pbOptPublicKey,
+                cbOptPublicKey,
                 SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
                 SYMCRYPT_ECPOINT_FORMAT_XY,
                 flags,
                 pkPrivate );
     CHECK3( scError == SYMCRYPT_NO_ERROR, "Private key set value failed for ECDH record at line %lld", line );
 
-    // Check if the public key created is correct
-    scError = SymCryptEckeyGetValue(
+    // Check if the set public key is correct
+    scError = ScDispatchSymCryptEckeyGetValue(
                 pkPrivate,
-                NULL,
+                nullptr,
                 0,
                 pbPublicKey,
-                SymCryptEckeySizeofPublicKey( pkPrivate, SYMCRYPT_ECPOINT_FORMAT_XY ),
+                ScDispatchSymCryptEckeySizeofPublicKey( pkPrivate, SYMCRYPT_ECPOINT_FORMAT_XY ),
                 SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
                 SYMCRYPT_ECPOINT_FORMAT_XY,
                 0 );
@@ -984,49 +1268,62 @@ testEcdh(
     CHECK3( memcmp( pbQxa, pbPublicKey, cbQxa ) == 0, "Qx doesn't match for ECDH record at line %lld", line );
     CHECK3( memcmp( pbQya, pbPublicKey + cbQxa, cbQya ) == 0, "Qy doesn't match for ECDH record at line %lld", line );
 
-    // Set the public key
+    // Set the public key for party B
+    // Randomize flags to exercise more codepaths
+    flags = SYMCRYPT_FLAG_ECKEY_ECDH;
+    if (randByte & 0x10)
+    {
+        flags |= SYMCRYPT_FLAG_KEY_NO_FIPS;
+    }
+    if ((randByte & 0x20) && (flags & SYMCRYPT_FLAG_KEY_NO_FIPS))
+    {
+        flags |= SYMCRYPT_FLAG_KEY_MINIMAL_VALIDATION;
+    }
+    if (randByte & 0x40)
+    {
+        flags |= SYMCRYPT_FLAG_ECKEY_ECDSA;
+    }
     memcpy(pbPublicKey, pbQxb, cbQxb);
     memcpy(pbPublicKey+cbQxb, pbQyb, cbQyb);
 
-    scError = SymCryptEckeySetValue(
-                NULL,
+    scError = ScDispatchSymCryptEckeySetValue(
+                nullptr,
                 0,
                 pbPublicKey,
                 cbQxb + cbQyb,
                 SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
                 SYMCRYPT_ECPOINT_FORMAT_XY,
-                0,
+                flags,
                 pkPublic );
     CHECK3( scError == SYMCRYPT_NO_ERROR, "Public key set value failed for ECDH record at line %lld", line );
 
     // Call Ecdh
-    scError = SymCryptEcDhSecretAgreement(
+    scError = ScDispatchSymCryptEcDhSecretAgreement(
                 pkPrivate,
                 pkPublic,
                 SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
-                flags,
+                secretAgreementFlags,
                 pbSharedSecret,
-                SymCryptEcurveSizeofFieldElement( pCurve ));
+                ScDispatchSymCryptEcurveSizeofFieldElement( pCurve ));
     CHECK3( scError == SYMCRYPT_NO_ERROR, "SymCryptEcDhSecretAgreement failed for ECDH record at line %lld", line );
 
     CHECK3( memcmp( pbSs, pbSharedSecret, cbSs ) == 0, "Shared secret doesn't match for ECDH record at line %lld", line );
 
-    SymCryptEckeyFree( pkPublic );
-    SymCryptEckeyFree( pkPrivate );
+    ScDispatchSymCryptEckeyFree( pkPublic );
+    ScDispatchSymCryptEckeyFree( pkPrivate );
 }
 
 VOID
 testEccEcdsaKats()
 {
-    std::auto_ptr<KatData> katEcc( getCustomResource( "kat_ecdsa.dat", "KAT_ECDSA" ) );
+    std::unique_ptr<KatData> katEcc( getCustomResource( "kat_ecdsa.dat", "KAT_ECDSA" ) );
     KAT_ITEM katItem;
 
     String sep = "";
 
-    int i = 0;
+    SIZE_T i = 0;
     BOOLEAN bCurveFound = FALSE;
     PSYMCRYPT_ECURVE pCurve = NULL;
-    BOOLEAN bHashFound = FALSE;
     PCSYMCRYPT_HASH pHash = NULL;
 
     UINT32 cEcdsaSignSamples = 0;
@@ -1061,7 +1358,7 @@ testEccEcdsaKats()
             for( i=0; i < NUM_OF_INTERNAL_CURVES; i++ )
             {
                 // Compare with the curve name excluding the first and last character (they are ")
-                if ( lstrcmp( pKatCurve->data.substr(1,pKatCurve->data.size()-2).c_str(), rgbInternalCurves[i].pszCurveName ) == 0 )
+                if ( strcmp( pKatCurve->data.substr(1,pKatCurve->data.size()-2).c_str(), rgbInternalCurves[i].pszCurveName ) == 0 )
                 {
                     bCurveFound = TRUE;
                     break;
@@ -1087,23 +1384,10 @@ testEccEcdsaKats()
                 const KAT_DATA_ITEM * pKatHash = findDataItem( katItem, "hash" );
                 CHECK3( pKatHash != NULL, "No hash data item in ECDSA record at line %lld", line );
 
-                bHashFound = FALSE;
-                for( i=0; i < NUM_OF_ECC_HASH_ALGORITHMS; i++ )
+                if( !getHashAlgorithm( pKatHash->data.substr(1,pKatHash->data.size()-2).c_str(), line, &pHash ) )
                 {
-                    if ( lstrcmp( pKatHash->data.substr(1,pKatHash->data.size()-2).c_str(), rgbHashAlgorithms[i].pszHashName ) == 0 )
-                    {
-                        bHashFound = TRUE;
-                        break;
-                    }
+                    continue; // skip this record
                 }
-                if (!bHashFound)
-                {
-                    dprint( "Ecdsa record at line %lld is skipped due to unknown hash function.\n", line);
-                    continue;   // Skip this record if the hash algorithm is not in SymCrypt (e.g. SHA224)
-                }
-
-                pHash = rgbHashAlgorithms[i].pHash;
-                CHECK3( pHash != NULL, "NULL hash for ECDSA record at line %lld", line );
 
                 BString katMsg = katParseData( katItem, "msg" );
                 BString katQx = katParseData( katItem, "qx" );
@@ -1131,7 +1415,7 @@ testEccEcdsaKats()
                 //
                 // Ecdh
                 //
-                CHECK3( katItem.dataItems.size() == 9, "Wrong number of items in ECDSA Verify record at line %lld", line );
+                CHECK3( katItem.dataItems.size() == 9, "Wrong number of items in ECDH record at line %lld", line );
 
                 BString katDiut = katParseData( katItem, "diut" );
                 BString katQiutX = katParseData( katItem, "qiutx" );
@@ -1166,23 +1450,10 @@ testEccEcdsaKats()
                 const KAT_DATA_ITEM * pKatHash = findDataItem( katItem, "hash" );
                 CHECK3( pKatHash != NULL, "No hash data item in ECDSA record at line %lld", line );
 
-                bHashFound = FALSE;
-                for( i=0; i < NUM_OF_ECC_HASH_ALGORITHMS; i++ )
+                if( !getHashAlgorithm( pKatHash->data.substr(1,pKatHash->data.size()-2).c_str(), line, &pHash ) )
                 {
-                    if ( lstrcmp( pKatHash->data.substr(1,pKatHash->data.size()-2).c_str(), rgbHashAlgorithms[i].pszHashName ) == 0 )
-                    {
-                        bHashFound = TRUE;
-                        break;
-                    }
+                    continue; // skip this record
                 }
-                if (!bHashFound)
-                {
-                    dprint( "Ecdsa record at line %lld is skipped due to unknown hash function.\n", line);
-                    continue;   // Skip this record if the hash algorithm is not in SymCrypt (e.g. SHA224)
-                }
-
-                pHash = rgbHashAlgorithms[i].pHash;
-                CHECK3( pHash != NULL, "NULL hash for ECDSA record at line %lld", line );
 
                 BString katMsg = katParseData( katItem, "msg" );
                 BString katD = katParseData( katItem, "d" );

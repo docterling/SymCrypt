@@ -5,8 +5,8 @@
 
 VOID
 SYMCRYPT_CALL
-SYMCRYPT_HmacXxxStateCopy( 
-    _In_        PCSYMCRYPT_HMAC_XXX_STATE           pSrc, 
+SYMCRYPT_HmacXxxStateCopy(
+    _In_        PCSYMCRYPT_HMAC_XXX_STATE           pSrc,
     _In_opt_    PCSYMCRYPT_HMAC_XXX_EXPANDED_KEY    pExpandedKey,
     _Out_       PSYMCRYPT_HMAC_XXX_STATE            pDst )
 {
@@ -18,7 +18,7 @@ SYMCRYPT_HmacXxxStateCopy(
     {
         SYMCRYPT_CHECK_MAGIC( pExpandedKey );
         pDst->pKey = pExpandedKey;
-    } 
+    }
     else
     {
         SYMCRYPT_CHECK_MAGIC( pSrc->pKey );
@@ -36,13 +36,12 @@ SYMCRYPT_HmacXxxKeyCopy( _In_ PCSYMCRYPT_HMAC_XXX_EXPANDED_KEY pSrc, _Out_ PSYMC
     SYMCRYPT_SET_MAGIC( pDst );
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SYMCRYPT_HmacXxxExpandKey( 
-    _Out_              PSYMCRYPT_HMAC_XXX_EXPANDED_KEY  pExpandedKey,
-    _In_reads_(cbKey)  PCBYTE                           pbKey,
-                       SIZE_T                           cbKey )
+SYMCRYPT_HmacXxxExpandKey(
+    _Out_                   PSYMCRYPT_HMAC_XXX_EXPANDED_KEY pExpandedKey,
+    _In_reads_opt_(cbKey)   PCBYTE                          pbKey,
+                            SIZE_T                          cbKey )
 {
     SYMCRYPT_XXX_STATE  hashState;
     SYMCRYPT_ALIGN BYTE iblock[ SYMCRYPT_XXX_INPUT_BLOCK_SIZE ];  // One input block for the hash function
@@ -60,7 +59,10 @@ SYMCRYPT_HmacXxxExpandKey(
 
     if( cbKey <= sizeof( iblock ) )
     {
-        memcpy( iblock, pbKey, cbKey );
+        if( cbKey > 0 )
+        {
+            memcpy( iblock, pbKey, cbKey );
+        }
     } else {
         //
         // We can use the existing MD5 state to hash the long key.
@@ -97,7 +99,7 @@ SYMCRYPT_HmacXxxExpandKey(
 SYMCRYPT_NOINLINE
 VOID
 SYMCRYPT_CALL
-SYMCRYPT_HmacXxxInit( 
+SYMCRYPT_HmacXxxInit(
     _Out_   PSYMCRYPT_HMAC_XXX_STATE            pState,
     _In_    PCSYMCRYPT_HMAC_XXX_EXPANDED_KEY    pExpandedKey)
 {
@@ -118,7 +120,7 @@ SYMCRYPT_HmacXxxInit(
 
 VOID
 SYMCRYPT_CALL
-SYMCRYPT_HmacXxxAppend( 
+SYMCRYPT_HmacXxxAppend(
     _Inout_                 PSYMCRYPT_HMAC_XXX_STATE    pState,
     _In_reads_( cbData )    PCBYTE                      pbData,
                             SIZE_T                      cbData )
@@ -147,19 +149,19 @@ SYMCRYPT_HmacXxxResult(
     SYMCRYPT_XxxResult( &pState->hash, innerRes );
 
     SYMCRYPT_CHECK_MAGIC( pState->pKey )
-        
+
     pState->hash.chain = pState->pKey->outerState;
 
     //
-    // We put the data direcly in the buffer, rather than call the Append function.
+    // We put the data directly in the buffer, rather than call the Append function.
     //
-    memcpy( &pState->hash.buffer , innerRes, sizeof( innerRes ) );
+    memcpy( &pState->hash.buffer, innerRes, sizeof( innerRes ) );
     SET_DATALENGTH(  pState->hash, SYMCRYPT_XXX_INPUT_BLOCK_SIZE + SYMCRYPT_XXX_RESULT_SIZE );
     pState->hash.bytesInBuffer = SYMCRYPT_XXX_RESULT_SIZE;
-    
+
     SYMCRYPT_XxxResult( &pState->hash, pbResult );
 
-    // 
+    //
     // The SymCryptXxxResult already wipes the hash state.
     // We only need to wipe our own buffer.
     //
@@ -176,7 +178,7 @@ SYMCRYPT_HmacXxxResult(
 SYMCRYPT_NOINLINE
 VOID
 SYMCRYPT_CALL
-SYMCRYPT_HmacXxx( 
+SYMCRYPT_HmacXxx(
     _In_                                            PCSYMCRYPT_HMAC_XXX_EXPANDED_KEY    pExpandedKey,
     _In_reads_( cbData )                           PCBYTE                              pbData,
                                                     SIZE_T                              cbData,
@@ -187,5 +189,5 @@ SYMCRYPT_HmacXxx(
     SYMCRYPT_HmacXxxInit( &state, pExpandedKey );
     SYMCRYPT_HmacXxxAppend( &state, pbData, cbData );
     SYMCRYPT_HmacXxxResult( &state, pbResult );
-    
+
 }

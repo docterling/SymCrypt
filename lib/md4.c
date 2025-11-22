@@ -10,7 +10,7 @@
 //
 // This is a new implementation, NOT based on the existing ones in RSA32.lib.
 // There are 2 versions in RSA32.lib, one from RSA data security and one from
-// Scott Fields. 
+// Scott Fields.
 //
 // MD4 and MD5 are extremely similar. Having already done a new MD5 implementation it
 // was very little work to copy the code & turn it into an MD4 implementation.
@@ -35,6 +35,7 @@ const SYMCRYPT_HASH SymCryptMd4Algorithm_default = {
     &SymCryptMd4Append,
     &SymCryptMd4Result,
     &SymCryptMd4AppendBlocks,
+    &SymCryptMd4StateCopy,
     sizeof( SYMCRYPT_MD4_STATE ),
     SYMCRYPT_MD4_RESULT_SIZE,
     SYMCRYPT_MD4_INPUT_BLOCK_SIZE,
@@ -48,7 +49,7 @@ const PCSYMCRYPT_HASH SymCryptMd4Algorithm = &SymCryptMd4Algorithm_default;
 // The round constants used by MD4
 //
 //
-static const UINT32 md4Const[3] = { 
+static const UINT32 md4Const[3] = {
     0x00000000UL,
     0x5A827999UL,
     0x6ED9EBA1UL,
@@ -116,7 +117,7 @@ SYMCRYPT_CALL
 SymCryptMd4Init( _Out_ PSYMCRYPT_MD4_STATE pState )
 {
     SYMCRYPT_SET_MAGIC( pState );
-    
+
     pState->dataLengthL = 0;
     pState->dataLengthH = 0;
     pState->bytesInBuffer = 0;
@@ -148,7 +149,7 @@ SymCryptMd4Append( _Inout_              PSYMCRYPT_MD4_STATE    pState,
 //
 VOID
 SYMCRYPT_CALL
-SymCryptMd4Result( 
+SymCryptMd4Result(
     _Inout_                                 PSYMCRYPT_MD4_STATE pState,
    _Out_writes_( SYMCRYPT_MD4_RESULT_SIZE ) PBYTE               pbResult )
 {
@@ -221,7 +222,7 @@ SymCryptMd4Result(
 }
 
 //
-// FROUND are the subsequent rounds. 
+// FROUND are the subsequent rounds.
 //
 #define FROUND( r, Func ) { \
     Wt = W[md4MsgIndex[r]];\
@@ -230,7 +231,7 @@ SymCryptMd4Result(
 
 VOID
 SYMCRYPT_CALL
-SymCryptMd4AppendBlocks( 
+SymCryptMd4AppendBlocks(
     _Inout_                 PSYMCRYPT_MD4_CHAINING_STATE    pChain,
     _In_reads_( cbData )    PCBYTE                          pbData,
                             SIZE_T                          cbData,
@@ -245,7 +246,7 @@ SymCryptMd4AppendBlocks(
     ad[1] = pChain->H[3];
     ad[2] = pChain->H[2];
     ad[3] = pChain->H[1];
-    
+
     while( cbData >= 64 )
     {
         //
@@ -323,7 +324,7 @@ SymCryptMd4AppendBlocks(
 
 VOID
 SYMCRYPT_CALL
-SymCryptMd4StateExport( 
+SymCryptMd4StateExport(
     _In_                                                    PCSYMCRYPT_MD4_STATE    pState,
     _Out_writes_bytes_( SYMCRYPT_MD4_STATE_EXPORT_SIZE )    PBYTE                   pbBlob )
 {
@@ -356,7 +357,6 @@ SymCryptMd4StateExport(
     return;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptMd4StateImport(
@@ -411,14 +411,14 @@ static const BYTE   md4KATAnswer[ 16 ] = {
 
 VOID
 SYMCRYPT_CALL
-SymCryptMd4Selftest()
+SymCryptMd4Selftest(void)
 {
     BYTE result[SYMCRYPT_MD4_RESULT_SIZE];
 
     SymCryptMd4( SymCryptTestMsg3, sizeof( SymCryptTestMsg3 ), result );
 
     SymCryptInjectError( result, sizeof( result ) );
-    
+
     if( memcmp( result, md4KATAnswer, sizeof( result ) ) != 0 ) {
         SymCryptFatal( 'MD4t' );
     }

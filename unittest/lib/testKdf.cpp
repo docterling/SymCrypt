@@ -1,5 +1,5 @@
 //
-// Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
+// Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
 #include "precomp.h"
@@ -25,11 +25,11 @@ private:
 
 public:
 
-    virtual VOID derive( 
+    virtual VOID derive(
         _In_reads_( cbKey )     PCBYTE          pbKey,
                                 SIZE_T          cbKey,
         _In_                    PKDF_ARGUMENTS  args,
-        _Out_writes_( cbDst )   PBYTE           pbDst, 
+        _Out_writes_( cbDst )   PBYTE           pbDst,
                                 SIZE_T          cbDst );
 
     typedef std::vector<KdfImplementation *> KdfImpPtrVector;
@@ -37,14 +37,14 @@ public:
     KdfImpPtrVector m_imps;                    // Implementations we use
 
     KdfImpPtrVector m_comps;                   // Subset of m_imps; set of ongoing computations
-    
+
 };
 
 KdfMultiImp::KdfMultiImp( String algName )
 {
     getAllImplementations<KdfImplementation>( algName, &m_imps );
     m_algorithmName = algName;
-    
+
     String sumImpName;
     char * sepStr = "<";
 
@@ -69,11 +69,11 @@ KdfMultiImp::~KdfMultiImp()
 
 
 
-VOID KdfMultiImp::derive( 
+VOID KdfMultiImp::derive(
         _In_reads_( cbKey )     PCBYTE          pbKey,
                                 SIZE_T          cbKey,
         _In_                    PKDF_ARGUMENTS  args,
-        _Out_writes_( cbDst )   PBYTE           pbDst, 
+        _Out_writes_( cbDst )   PBYTE           pbDst,
                                 SIZE_T          cbDst )
 {
     BYTE    buf[1024];
@@ -93,8 +93,8 @@ VOID KdfMultiImp::derive(
 
 
 VOID
-katKdfSingle( 
-                                KdfImplementation * pImp, 
+katKdfSingle(
+                                KdfImplementation * pImp,
     _In_reads_( cbKey )         PCBYTE              pbKey,
                                 SIZE_T              cbKey,
     _In_                        PKDF_ARGUMENTS      pArgs,
@@ -130,11 +130,11 @@ testKdfRandom( KdfMultiImp * pImp, KDF_ARGUMENT_TYPE argType, int rrep, SIZE_T k
     SIZE_T algNameSize = pImp->m_algorithmName.size();
     CHECK( algNameSize < sizeof( buf ) - sizeof( ULONGLONG ), "Algorithm name too long" );
     memcpy( buf, pImp->m_algorithmName.data(), algNameSize );
-    *(ULONGLONG UNALIGNED *)&buf[algNameSize] = keyLen;
+    SYMCRYPT_STORE_LSBFIRST64(&buf[algNameSize], keyLen);
     rng.reset( buf, algNameSize + sizeof( ULONGLONG ) );
 
     memset( buf, 0, sizeof( buf ) );
-    
+
     SIZE_T keyIdx = 0;
     SIZE_T pos;
     SIZE_T len;
@@ -212,7 +212,7 @@ testKdfRandom( KdfMultiImp * pImp, KDF_ARGUMENT_TYPE argType, int rrep, SIZE_T k
     CHECK3( cbResult <= SYMCRYPT_SHA256_RESULT_SIZE, "Result size too long in line %lld", line );
     if( memcmp( buf, pbResult, cbResult ) != 0 )
     {
-            
+
         print( "*\nWrong KDF result in line %d. \n"
             "Expected ", line );
         printHex( pbResult, cbResult );
@@ -228,22 +228,23 @@ testKdfRandom( KdfMultiImp * pImp, KDF_ARGUMENT_TYPE argType, int rrep, SIZE_T k
 VOID
 testKdfKats()
 {
-    std::auto_ptr<KatData> katBlockCipher( getCustomResource( "kat_kdf.dat", "KAT_KDF" ) );
+    std::unique_ptr<KatData> katBlockCipher( getCustomResource( "kat_kdf.dat", "KAT_KDF" ) );
     KAT_ITEM katItem;
 
     static String g_currentCategory;
     BOOL skipData = TRUE;
     String sep = "    ";
     BOOL doneAnything = FALSE;
-    
-    std::auto_ptr<KdfMultiImp> pKdfMultiImp;
+    SYMCRYPT_ERROR scError;
+
+    std::unique_ptr<KdfMultiImp> pKdfMultiImp;
 
     while( 1 )
     {
         katBlockCipher->getKatItem( & katItem );
         ULONGLONG line = katItem.line;
 
-        
+
         if( katItem.type == KAT_TYPE_END )
         {
             break;
@@ -253,7 +254,7 @@ testKdfKats()
         {
             g_currentCategory = katItem.categoryName;
             pKdfMultiImp.reset( new KdfMultiImp( g_currentCategory ) );
-            
+
             //
             // If we have no algorithms, we skip all the data until the next category
             //
@@ -352,7 +353,7 @@ testKdfKats()
                 BString katKeyBlock = katParseData(katItem, "key_block");
 
                 /////////////////////////////////////////////////////////////////////////////////
-                // 
+                //
                 // Test routine for all versions (from RFCs 2246, 4336, 5246)
                 //
                 //      For all key exchange methods, the same algorithm is used to convert
@@ -415,6 +416,136 @@ testKdfKats()
                 args.uHkdf.cbInfo = katInfo.size ();
 
                 katKdfSingle( pKdfMultiImp.get(), katKey.data(), katKey.size(), &args, katRes.data(), katRes.size(), line );
+                continue;
+            }
+
+            if (katIsFieldPresent(katItem, "session_id"))
+            {
+                args.argType = KdfArgumentSshKdf;
+                CHECK3(katItem.dataItems.size() == 14, "Incorrect number of fields in SSH-KDF record in line %lld", line);
+
+                BString hashName = katParseData(katItem, "hash");
+
+                // The following fields are not used.
+                // We use the size of the data fields from the test vector..
+                //SIZE_T cbSharedSecret = katParseInteger(katItem, "shared secret length");
+                //SIZE_T cbIVLength = katParseInteger(katItem, "iv length");
+                //SIZE_T cbEncryptionKeyLength = katParseInteger(katItem, "encryption key length");
+
+                BString SharedKey = katParseData(katItem, "k");
+                BString HashValue = katParseData(katItem, "h");
+                BString SessionId = katParseData(katItem, "session_id");
+
+                args.uSshKdf.pbHashValue = HashValue.data();
+                args.uSshKdf.cbHashValue = HashValue.size();
+                args.uSshKdf.pbSessionId = SessionId.data();
+                args.uSshKdf.cbSessionId = SessionId.size();
+                args.uSshKdf.hashName = (PCSTR)hashName.c_str();
+
+                BString katInitialIV_ClientToServer = katParseData(katItem, "initial iv (client to server)");
+                BString katInitialIV_ServerToClient = katParseData(katItem, "initial iv (server to client)");
+                BString katEncryptionKey_ClientToServer = katParseData(katItem, "encryption key (client to server)");
+                BString katEncryptionKey_ServerToClient = katParseData(katItem, "encryption key (server to client)");
+                BString katIntegrityKey_ClientToServer = katParseData(katItem, "integrity key (client to server)");
+                BString katIntegrityKey_ServerToClient = katParseData(katItem, "integrity key (server to client)");
+
+                args.uSshKdf.label = SYMCRYPT_SSHKDF_IV_CLIENT_TO_SERVER;
+                katKdfSingle(pKdfMultiImp.get(), SharedKey.data(), SharedKey.size(), &args, katInitialIV_ClientToServer.data(), katInitialIV_ClientToServer.size(), line);
+
+                args.uSshKdf.label = SYMCRYPT_SSHKDF_IV_SERVER_TO_CLIENT;
+                katKdfSingle(pKdfMultiImp.get(), SharedKey.data(), SharedKey.size(), &args, katInitialIV_ServerToClient.data(), katInitialIV_ServerToClient.size(), line);
+
+                args.uSshKdf.label = SYMCRYPT_SSHKDF_ENCRYPTION_KEY_CLIENT_TO_SERVER;
+                katKdfSingle(pKdfMultiImp.get(), SharedKey.data(), SharedKey.size(), &args, katEncryptionKey_ClientToServer.data(), katEncryptionKey_ClientToServer.size(), line);
+
+                args.uSshKdf.label = SYMCRYPT_SSHKDF_ENCRYPTION_KEY_SERVER_TO_CLIENT;
+                katKdfSingle(pKdfMultiImp.get(), SharedKey.data(), SharedKey.size(), &args, katEncryptionKey_ServerToClient.data(), katEncryptionKey_ServerToClient.size(), line);
+
+                args.uSshKdf.label = SYMCRYPT_SSHKDF_INTEGRITY_KEY_CLIENT_TO_SERVER;
+                katKdfSingle(pKdfMultiImp.get(), SharedKey.data(), SharedKey.size(), &args, katIntegrityKey_ClientToServer.data(), katIntegrityKey_ClientToServer.size(), line);
+
+                args.uSshKdf.label = SYMCRYPT_SSHKDF_INTEGRITY_KEY_SERVER_TO_CLIENT;
+                katKdfSingle(pKdfMultiImp.get(), SharedKey.data(), SharedKey.size(), &args, katIntegrityKey_ServerToClient.data(), katIntegrityKey_ServerToClient.size(), line);
+
+                continue;
+            }
+
+            if (katIsFieldPresent(katItem, "srtp k_e"))
+            {
+                args.argType = KdfArgumentSrtpKdf;
+                CHECK3(katItem.dataItems.size() == 12, "Incorrect number of fields in SRTP-KDF record in line %lld", line);
+
+                BString k_master = katParseData(katItem, "k_master");
+                BString master_salt = katParseData(katItem, "master_salt");
+                BString kdr = katParseData(katItem, "kdr");
+                BString index = katParseData(katItem, "index");
+                BString indexSRTCP = katParseData(katItem, "index (srtcp)");
+
+                args.uSrtpKdf.pbSalt = master_salt.data();
+                args.uSrtpKdf.cbSalt = master_salt.size();
+                    
+                scError = SymCryptLoadMsbFirstUint32( kdr.data(), kdr.size(), &args.uSrtpKdf.uKeyDerivationRate );
+                CHECK( scError == SYMCRYPT_NO_ERROR, "Error reading srtp key derivation rate" );
+
+                BString katSRTPk_e = katParseData(katItem, "srtp k_e");
+                BString katSRTPk_a = katParseData(katItem, "srtp k_a");
+                BString katSRTPk_s = katParseData(katItem, "srtp k_s");
+                BString katSRTCPk_e = katParseData(katItem, "srtcp k_e");
+                BString katSRTCPk_a = katParseData(katItem, "srtcp k_a");
+                BString katSRTCPk_s = katParseData(katItem, "srtcp k_s");
+
+                {
+                    args.uSrtpKdf.uIndexWidth = 48;
+                    
+                    scError = SymCryptLoadMsbFirstUint64( index.data(), index.size(), &args.uSrtpKdf.uIndex );
+                    CHECK( scError == SYMCRYPT_NO_ERROR, "Error reading srtp index" );
+
+                    args.uSrtpKdf.label = SYMCRYPT_SRTP_ENCRYPTION_KEY;
+                    katKdfSingle(pKdfMultiImp.get(), k_master.data(), k_master.size(), &args, katSRTPk_e.data(), katSRTPk_e.size(), line);
+
+                    args.uSrtpKdf.label = SYMCRYPT_SRTP_AUTHENTICATION_KEY;
+                    katKdfSingle(pKdfMultiImp.get(), k_master.data(), k_master.size(), &args, katSRTPk_a.data(), katSRTPk_a.size(), line);
+
+                    args.uSrtpKdf.label = SYMCRYPT_SRTP_SALTING_KEY;
+                    katKdfSingle(pKdfMultiImp.get(), k_master.data(), k_master.size(), &args, katSRTPk_s.data(), katSRTPk_s.size(), line);
+                }
+
+                {
+                    args.uSrtpKdf.uIndexWidth = 32;
+                    
+                    scError = SymCryptLoadMsbFirstUint64( indexSRTCP.data(), indexSRTCP.size(), &args.uSrtpKdf.uIndex );
+                    CHECK( scError == SYMCRYPT_NO_ERROR, "Error reading srtcp index" );
+
+                    args.uSrtpKdf.label = SYMCRYPT_SRTCP_ENCRYPTION_KEY;
+                    katKdfSingle(pKdfMultiImp.get(), k_master.data(), k_master.size(), &args, katSRTCPk_e.data(), katSRTCPk_e.size(), line);
+
+                    args.uSrtpKdf.label = SYMCRYPT_SRTCP_AUTHENTICATION_KEY;
+                    katKdfSingle(pKdfMultiImp.get(), k_master.data(), k_master.size(), &args, katSRTCPk_a.data(), katSRTCPk_a.size(), line);
+
+                    args.uSrtpKdf.label = SYMCRYPT_SRTCP_SALTING_KEY;
+                    katKdfSingle(pKdfMultiImp.get(), k_master.data(), k_master.size(), &args, katSRTCPk_s.data(), katSRTCPk_s.size(), line);
+                }
+
+                continue;
+            }
+
+            if ( katIsFieldPresent(katItem, "fixed_info") )
+            {
+                args.argType = KdfArgumentSskdf;
+                CHECK3( katItem.dataItems.size() == 4, "Incorrect number of fields in SSKDF record in line %lld", line );
+
+                BString katSecret = katParseData( katItem, "z" );
+                BString katFixedInfo = katParseData( katItem, "fixed_info" );
+                BString katSalt = katParseData( katItem, "salt" );
+                BString katRes = katParseData( katItem, "res" );
+
+                args.uSskdf.cbInfo = katFixedInfo.size();
+                args.uSskdf.pbInfo = args.uSskdf.cbInfo > 0 ? katFixedInfo.data() : NULL;
+                args.uSskdf.cbSalt = katSalt.size();
+                args.uSskdf.pbSalt = args.uSskdf.cbSalt > 0 ? katSalt.data() : NULL;
+
+                katKdfSingle( pKdfMultiImp.get(), katSecret.data(), katSecret.size(), &args, katRes.data(), katRes.size(), line );
+
                 continue;
             }
 

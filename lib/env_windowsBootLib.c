@@ -5,28 +5,42 @@
 // Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
+#pragma warning(push)
+#pragma warning(disable: 5103) // Arm64's wdm.h included below currently generate a lot of 5103 warnings
 #include <ntddk.h>
+#pragma warning(pop)
 #include <windef.h>
 
 #include "symcrypt.h"
 #include "sc_lib.h"
 
-#include "blstatus.h"
+//
+// The BlStatusError function, part of the bootlib, is normally defined in blstatus.h
+// We can't include that header file from outside the onecore codebase.
+// We copied the definition here.
+//
+
+VOID
+BlStatusError (
+    __in ULONG ErrorCode,
+    __in ULONG_PTR ErrorParameter1,
+    __in ULONG_PTR ErrorParameter2,
+    __in ULONG_PTR ErrorParameter3,
+    __in ULONG_PTR ErrorParameter4
+    );
+
+
 
 SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvWindowsBootlibrary()
 {
-#if SYMCRYPT_CPU_X86 
+#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
     //
-    // We disable AVX2 for X86.
+    // We disable AVX2 for X86 (including X86-64)
     // This reduces codesize for bootmgr on PCAT which is codesize-constrained,
     // and is simpler than creating a separate PCAT-bootlib SymCrypt environment.
-    // We expect that very few AVX2-capable machines will boot x86, and x86 still has XMM-based parallel
-    // hashing, so the performance loss is quite small.
-    // We considered locking out AES-NI as well; that would reduce codesize, but slow down BitLocker boot on
-    // x86 which is an important mobile scenario.
     //
     return SYMCRYPT_CPU_FEATURE_AVX2;
-#elif SYMCRYPT_CPU_ARM | SYMCRYPT_CPU_ARM64 | SYMCRYPT_CPU_AMD64
+#elif SYMCRYPT_CPU_ARM | SYMCRYPT_CPU_ARM64
     return 0;
 #endif
 }
@@ -38,7 +52,7 @@ SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnvWindowsBoo
 SYMCRYPT_NOINLINE
 VOID
 SYMCRYPT_CALL
-SymCryptInitEnvWindowsBootlibrary()
+SymCryptInitEnvWindowsBootlibrary( UINT32 version )
 {
     if( g_SymCryptFlags & SYMCRYPT_FLAG_LIB_INITIALIZED )
     {
@@ -61,7 +75,7 @@ SymCryptInitEnvWindowsBootlibrary()
     SymCryptDetectCpuFeaturesFromRegistersNoTry();
 #endif    
 
-    SymCryptInitEnvCommon();
+    SymCryptInitEnvCommon( version );
 }
 
 _Analysis_noreturn_

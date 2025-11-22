@@ -8,20 +8,19 @@
 
 VOID
 SYMCRYPT_CALL
-SymCryptChaCha20CryptBlocks( 
+SymCryptChaCha20CryptBlocks(
     _Inout_                 PSYMCRYPT_CHACHA20_STATE    pState,
     _In_reads_( cbData )    PCBYTE                      pbSrc,
     _Out_writes_( cbData )  PBYTE                       pbDst,
                             SIZE_T                      cbData );
 // Encrypt Src to Dst using whole blocks, starting at block floor(pState->offset/64).
 // # blocks processed is floor( cbData / 64 )
-// pState->offset pointis updated by 64 for each block encrypted
+// pState->offset point is updated by 64 for each block encrypted
 
 
 
 #define OFFSET_MASK     (((UINT64)1 << 38) - 1)
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptChaCha20Init(
@@ -39,7 +38,7 @@ SymCryptChaCha20Init(
         scError = SYMCRYPT_WRONG_KEY_SIZE;
         goto cleanup;
     }
-    
+
     if (cbNonce != 12)
     {
         scError = SYMCRYPT_WRONG_NONCE_SIZE;
@@ -67,7 +66,7 @@ SymCryptChaCha20SetOffset(
 
 VOID
 SYMCRYPT_CALL
-SymCryptChaCha20Crypt( 
+SymCryptChaCha20Crypt(
     _Inout_                 PSYMCRYPT_CHACHA20_STATE    pState,
     _In_reads_( cbData )    PCBYTE                      pbSrc,
     _Out_writes_( cbData )  PBYTE                       pbDst,
@@ -76,9 +75,9 @@ SymCryptChaCha20Crypt(
     UINT32  blockOffset;
     SIZE_T  nBytes;
 
-    blockOffset = pState->offset & 0x3f;        
+    blockOffset = pState->offset & 0x3f;
 
-    // If the offset is in the middle of the block, we first crypt until the end 
+    // If the offset is in the middle of the block, we first crypt until the end
     // of the block
     if( blockOffset != 0 )
     {
@@ -86,9 +85,9 @@ SymCryptChaCha20Crypt(
         {
             // Generate a block of key stream
             SymCryptWipe( &pState->keystream[0], 64 );
-            SymCryptChaCha20CryptBlocks(    pState, 
-                                            &pState->keystream[0], 
-                                            &pState->keystream[0], 
+            SymCryptChaCha20CryptBlocks(    pState,
+                                            &pState->keystream[0],
+                                            &pState->keystream[0],
                                             64 );
             pState->offset -= 64;   // Don't update the offset yet
         }
@@ -129,9 +128,9 @@ SymCryptChaCha20Crypt(
     {
         // Generate a block of key stream
         SymCryptWipe( &pState->keystream[0], 64 );
-        SymCryptChaCha20CryptBlocks(    pState, 
-                                        &pState->keystream[0], 
-                                        &pState->keystream[0], 
+        SymCryptChaCha20CryptBlocks(    pState,
+                                        &pState->keystream[0],
+                                        &pState->keystream[0],
                                         64 );
         pState->offset -= 64;   // Don't update the offset yet
         pState->keystreamBufferValid = TRUE;
@@ -154,7 +153,7 @@ SymCryptChaCha20Crypt(
 
 VOID
 SYMCRYPT_CALL
-SymCryptChaCha20CryptBlocks( 
+SymCryptChaCha20CryptBlocks(
     _Inout_                 PSYMCRYPT_CHACHA20_STATE    pState,
     _In_reads_( cbData )    PCBYTE                      pbSrc,
     _Out_writes_( cbData )  PBYTE                       pbDst,
@@ -163,13 +162,12 @@ SymCryptChaCha20CryptBlocks(
     UINT32 counter;
     UINT32 s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15;
     int i;
-    
+
     counter = (UINT32)(pState->offset >> 6);
 
     while( cbData >= 64 )
     {
         // Initialize the state
-
         s0  = 0x61707865;
         s1  = 0x3320646e;
         s2  = 0x79622d32;
@@ -235,28 +233,26 @@ SymCryptChaCha20CryptBlocks(
         SYMCRYPT_STORE_LSBFIRST32( pbDst + 60, s15 ^ SYMCRYPT_LOAD_LSBFIRST32( pbSrc + 60 ) );
 
         counter ++;
-        if( counter == 0 )
-        {
-            SymCryptFatal( 'Chax' );
-        }
+        // If counter overflows then the caller has encrypted more than 256GB of data with a single stream, which is
+        // called out as being insecure. It is the caller's responsibility to avoid this!
         pbSrc += 64;
         pbDst += 64;
         cbData -= 64;
         pState->offset += 64;
     }
 }
- 
+
 static const BYTE   chacha20KatAnswer[ 3 ] = { 0xb5, 0xe0, 0x54 };
 
 VOID
 SYMCRYPT_CALL
-SymCryptChaCha20Selftest()
+SymCryptChaCha20Selftest(void)
 {
     BYTE buf[3];
     SYMCRYPT_CHACHA20_STATE  state;
 
-    SymCryptChaCha20Init(   &state, 
-                            SymCryptTestKey32, sizeof( SymCryptTestKey32 ), 
+    SymCryptChaCha20Init(   &state,
+                            SymCryptTestKey32, sizeof( SymCryptTestKey32 ),
                             SymCryptTestMsg16, 12,
                             0 );
 

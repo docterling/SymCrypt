@@ -16,11 +16,25 @@
 // See the symcrypt.h file for documentation on what the various functions do.
 //
 
+const SYMCRYPT_HASH SymCryptSha224Algorithm_default = {
+    &SymCryptSha224Init,
+    &SymCryptSha224Append,
+    &SymCryptSha224Result,
+    &SymCryptSha256AppendBlocks,
+    &SymCryptSha224StateCopy,
+    sizeof( SYMCRYPT_SHA224_STATE ),
+    SYMCRYPT_SHA224_RESULT_SIZE,
+    SYMCRYPT_SHA224_INPUT_BLOCK_SIZE,
+    SYMCRYPT_FIELD_OFFSET( SYMCRYPT_SHA224_STATE, chain ),
+    SYMCRYPT_FIELD_SIZE( SYMCRYPT_SHA224_STATE, chain ),
+};
+
 const SYMCRYPT_HASH SymCryptSha256Algorithm_default = {
     &SymCryptSha256Init,
     &SymCryptSha256Append,
     &SymCryptSha256Result,
     &SymCryptSha256AppendBlocks,
+    &SymCryptSha256StateCopy,
     sizeof( SYMCRYPT_SHA256_STATE ),
     SYMCRYPT_SHA256_RESULT_SIZE,
     SYMCRYPT_SHA256_INPUT_BLOCK_SIZE,
@@ -28,6 +42,7 @@ const SYMCRYPT_HASH SymCryptSha256Algorithm_default = {
     SYMCRYPT_FIELD_SIZE( SYMCRYPT_SHA256_STATE, chain ),
 };
 
+const PCSYMCRYPT_HASH SymCryptSha224Algorithm = &SymCryptSha224Algorithm_default;
 const PCSYMCRYPT_HASH SymCryptSha256Algorithm = &SymCryptSha256Algorithm_default;
 
 //
@@ -36,7 +51,7 @@ const PCSYMCRYPT_HASH SymCryptSha256Algorithm = &SymCryptSha256Algorithm_default
 // This array is also used by the parallel SHA256 implementation
 // For performance we align to 256 bytes, which gives optimal cache alignment.
 //
-__declspec( align( 256 ) ) const  UINT32 SymCryptSha256K[64] = {
+SYMCRYPT_ALIGN_AT( 256 ) const  UINT32 SymCryptSha256K[64] = {
     0x428a2f98UL, 0x71374491UL, 0xb5c0fbcfUL, 0xe9b5dba5UL,
     0x3956c25bUL, 0x59f111f1UL, 0x923f82a4UL, 0xab1c5ed5UL,
     0xd807aa98UL, 0x12835b01UL, 0x243185beUL, 0x550c7dc3UL,
@@ -59,6 +74,17 @@ __declspec( align( 256 ) ) const  UINT32 SymCryptSha256K[64] = {
 //
 // Initial state
 //
+static const UINT32 sha224InitialState[8] = {
+    0xc1059ed8UL,
+    0x367cd507UL,
+    0x3070dd17UL,
+    0xf70e5939UL,
+    0xffc00b31UL,
+    0x68581511UL,
+    0x64f98fa7UL,
+    0xbefa4fa4UL,
+};
+
 static const UINT32 sha256InitialState[8] = {
     0x6a09e667UL,
     0xbb67ae85UL,
@@ -69,6 +95,15 @@ static const UINT32 sha256InitialState[8] = {
     0x1f83d9abUL,
     0x5be0cd19UL,
 };
+
+//
+// SymCryptSha224
+//
+#define ALG SHA224
+#define Alg Sha224
+#include "hash_pattern.c"
+#undef ALG
+#undef Alg
 
 //
 // SymCryptSha256
@@ -90,7 +125,7 @@ SYMCRYPT_CALL
 SymCryptSha256Init( _Out_ PSYMCRYPT_SHA256_STATE pState )
 {
     SYMCRYPT_SET_MAGIC( pState );
-    
+
     pState->dataLengthL = 0;
     //pState->dataLengthH = 0;      // not used
     pState->bytesInBuffer = 0;
@@ -105,12 +140,35 @@ SymCryptSha256Init( _Out_ PSYMCRYPT_SHA256_STATE pState )
 
 
 //
+// SymCryptSha224Init
+//
+SYMCRYPT_NOINLINE
+VOID
+SYMCRYPT_CALL
+SymCryptSha224Init( _Out_ PSYMCRYPT_SHA224_STATE pState )
+{
+    SYMCRYPT_SET_MAGIC( pState );
+
+    pState->dataLengthL = 0;
+    //pState->dataLengthH = 0;      // not used
+    pState->bytesInBuffer = 0;
+
+    memcpy( &pState->chain.H[0], &sha224InitialState[0], sizeof( sha224InitialState ) );
+
+    //
+    // There is no need to initialize the buffer part of the state as that will be
+    // filled before it is used.
+    //
+}
+
+
+//
 // SymCryptSha256Append
 //
 SYMCRYPT_NOINLINE
 VOID
 SYMCRYPT_CALL
-SymCryptSha256Append( 
+SymCryptSha256Append(
     _Inout_                 PSYMCRYPT_SHA256_STATE  pState,
     _In_reads_( cbData )    PCBYTE                  pbData,
                             SIZE_T                  cbData )
@@ -137,7 +195,7 @@ SymCryptSha256Append(
         {
             //
             // All the data will fit in the buffer.
-            // We don't do anything here. 
+            // We don't do anything here.
             // As cbData < inputBlockSize the bulk data processing is skipped,
             // and the data will be copied to the buffer at the end
             // of this code.
@@ -149,7 +207,7 @@ SymCryptSha256Append(
             pbData += freeInBuffer;
             cbData -= freeInBuffer;
             SymCryptSha256AppendBlocks( &pState->chain, &pState->buffer[0], SYMCRYPT_SHA256_INPUT_BLOCK_SIZE, &tmp );
-            
+
             bytesInBuffer = 0;
         }
     }
@@ -181,12 +239,27 @@ SymCryptSha256Append(
 
 
 //
+// SymCryptSha224Append
+//
+SYMCRYPT_NOINLINE
+VOID
+SYMCRYPT_CALL
+SymCryptSha224Append(
+    _Inout_                 PSYMCRYPT_SHA224_STATE  pState,
+    _In_reads_( cbData )    PCBYTE                  pbData,
+                            SIZE_T                  cbData )
+{
+    SymCryptSha256Append( (PSYMCRYPT_SHA256_STATE)pState, pbData, cbData );
+}
+
+
+//
 // SymCryptSha256Result
 //
 SYMCRYPT_NOINLINE
 VOID
 SYMCRYPT_CALL
-SymCryptSha256Result(   
+SymCryptSha256Result(
     _Inout_                                     PSYMCRYPT_SHA256_STATE  pState,
     _Out_writes_( SYMCRYPT_SHA256_RESULT_SIZE ) PBYTE                   pbResult )
 {
@@ -248,11 +321,40 @@ SymCryptSha256Result(
 }
 
 
+//
+// SymCryptSha224Result
+//
+SYMCRYPT_NOINLINE
 VOID
 SYMCRYPT_CALL
-SymCryptSha256StateExport(
+SymCryptSha224Result(
+    _Inout_                                     PSYMCRYPT_SHA224_STATE  pState,
+    _Out_writes_( SYMCRYPT_SHA224_RESULT_SIZE ) PBYTE                   pbResult )
+{
+    SYMCRYPT_ALIGN BYTE sha256Result[SYMCRYPT_SHA256_RESULT_SIZE];      // Buffer for SHA-256 output
+
+    //
+    // The SHA-3224 result is the first 28 bytes of the SHA-256 result of our state
+    //
+    SymCryptSha256Result( (PSYMCRYPT_SHA256_STATE)pState, sha256Result );
+    memcpy( pbResult, sha256Result, SYMCRYPT_SHA224_RESULT_SIZE );
+
+    //
+    // The buffer was already wiped by the SymCryptSha256Result function, we
+    // just have to re-initialize for SHA-224
+    //
+    SymCryptSha224Init( pState );
+
+    SymCryptWipeKnownSize( sha256Result, sizeof( sha256Result ) );
+}
+
+
+VOID
+SYMCRYPT_CALL
+SymCryptSha256StateExportCore(
     _In_                                                    PCSYMCRYPT_SHA256_STATE pState,
-    _Out_writes_bytes_( SYMCRYPT_SHA256_STATE_EXPORT_SIZE ) PBYTE                   pbBlob )
+    _Out_writes_bytes_( SYMCRYPT_SHA256_STATE_EXPORT_SIZE ) PBYTE                   pbBlob,
+    _In_                                                    UINT32                  type )
 {
     SYMCRYPT_ALIGN SYMCRYPT_SHA256_STATE_EXPORT_BLOB blob;           // local copy to have proper alignment.
     C_ASSERT( sizeof( blob ) == SYMCRYPT_SHA256_STATE_EXPORT_SIZE );
@@ -263,7 +365,7 @@ SymCryptSha256StateExport(
 
     blob.header.magic = SYMCRYPT_BLOB_MAGIC;
     blob.header.size = SYMCRYPT_SHA256_STATE_EXPORT_SIZE;
-    blob.header.type = SymCryptBlobTypeSha256State;
+    blob.header.type = type;
 
     //
     // Copy the relevant data. Buffer will be 0-padded.
@@ -283,12 +385,33 @@ SymCryptSha256StateExport(
     return;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
+
+VOID
+SYMCRYPT_CALL
+SymCryptSha256StateExport(
+    _In_                                                    PCSYMCRYPT_SHA256_STATE pState,
+    _Out_writes_bytes_( SYMCRYPT_SHA256_STATE_EXPORT_SIZE ) PBYTE                   pbBlob)
+{
+    SymCryptSha256StateExportCore( pState, pbBlob, SymCryptBlobTypeSha256State );
+}
+
+
+VOID
+SYMCRYPT_CALL
+SymCryptSha224StateExport(
+    _In_                                                    PCSYMCRYPT_SHA224_STATE pState,
+    _Out_writes_bytes_( SYMCRYPT_SHA256_STATE_EXPORT_SIZE ) PBYTE                   pbBlob)
+{
+    SymCryptSha256StateExportCore( (PSYMCRYPT_SHA256_STATE)pState, pbBlob, SymCryptBlobTypeSha224State );
+}
+
+
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptSha256StateImport(
+SymCryptSha256StateImportCore(
     _Out_                                                   PSYMCRYPT_SHA256_STATE  pState,
-    _In_reads_bytes_( SYMCRYPT_SHA256_STATE_EXPORT_SIZE)    PCBYTE                  pbBlob )
+    _In_reads_bytes_( SYMCRYPT_SHA256_STATE_EXPORT_SIZE)    PCBYTE                  pbBlob,
+    _In_                                                    UINT32                  type )
 {
     SYMCRYPT_ERROR                      scError = SYMCRYPT_NO_ERROR;
     SYMCRYPT_ALIGN SYMCRYPT_SHA256_STATE_EXPORT_BLOB   blob;                       // local copy to have proper alignment.
@@ -299,7 +422,7 @@ SymCryptSha256StateImport(
 
     if( blob.header.magic != SYMCRYPT_BLOB_MAGIC ||
         blob.header.size != SYMCRYPT_SHA256_STATE_EXPORT_SIZE ||
-        blob.header.type != SymCryptBlobTypeSha256State )
+        blob.header.type != type )
     {
         scError = SYMCRYPT_INVALID_BLOB;
         goto cleanup;
@@ -325,6 +448,26 @@ cleanup:
 }
 
 
+SYMCRYPT_ERROR
+SYMCRYPT_CALL
+SymCryptSha256StateImport(
+    _Out_                                                   PSYMCRYPT_SHA256_STATE  pState,
+    _In_reads_bytes_( SYMCRYPT_SHA256_STATE_EXPORT_SIZE)    PCBYTE                  pbBlob )
+{
+    return SymCryptSha256StateImportCore( pState, pbBlob, SymCryptBlobTypeSha256State );
+}
+
+
+SYMCRYPT_ERROR
+SYMCRYPT_CALL
+SymCryptSha224StateImport(
+    _Out_                                                   PSYMCRYPT_SHA224_STATE  pState,
+    _In_reads_bytes_( SYMCRYPT_SHA224_STATE_EXPORT_SIZE)    PCBYTE                  pbBlob )
+{
+    return SymCryptSha256StateImportCore( (PSYMCRYPT_SHA256_STATE)pState, pbBlob, SymCryptBlobTypeSha224State );
+}
+
+
 
 //
 // Simple test vector for FIPS module testing
@@ -339,16 +482,42 @@ const BYTE SymCryptSha256KATAnswer[ 32 ] = {
 
 VOID
 SYMCRYPT_CALL
-SymCryptSha256Selftest()
+SymCryptSha256Selftest(void)
 {
     BYTE result[SYMCRYPT_SHA256_RESULT_SIZE];
 
     SymCryptSha256( SymCryptTestMsg3, sizeof( SymCryptTestMsg3 ), result );
 
     SymCryptInjectError( result, sizeof( result ) );
-    
+
     if( memcmp( result, SymCryptSha256KATAnswer, sizeof( result ) ) != 0 ) {
         SymCryptFatal( 'SH25' );
+    }
+}
+
+//
+// Simple test vector for FIPS module testing
+//
+
+const BYTE SymCryptSha224KATAnswer[ 28 ] = {
+    0x23, 0x09, 0x7d, 0x22, 0x34, 0x05, 0xd8, 0x22,
+    0x86, 0x42, 0xa4, 0x77, 0xbd, 0xa2, 0x55, 0xb3,
+    0x2a, 0xad, 0xbc, 0xe4, 0xbd, 0xa0, 0xb3, 0xf7,
+    0xe3, 0x6c, 0x9d, 0xa7,
+    } ;
+
+VOID
+SYMCRYPT_CALL
+SymCryptSha224Selftest(void)
+{
+    BYTE result[SYMCRYPT_SHA224_RESULT_SIZE];
+
+    SymCryptSha224( SymCryptTestMsg3, sizeof( SymCryptTestMsg3 ), result );
+
+    SymCryptInjectError( result, sizeof( result ) );
+
+    if( memcmp( result, SymCryptSha224KATAnswer, sizeof( result ) ) != 0 ) {
+        SymCryptFatal( 'SH22' );
     }
 }
 
@@ -364,9 +533,9 @@ SymCryptSha256Selftest()
 //
 
 //
-// Enable frame pointer ommision to free up an extra register on X86.
+// Enable frame pointer omission to free up an extra register on X86.
 //
-#if SYMCRYPT_CPU_X86
+#if SYMCRYPT_CPU_X86 && SYMCRYPT_MS_VC
 #pragma optimize( "y", on )
 #endif
 
@@ -398,7 +567,7 @@ SymCryptSha256Selftest()
 // value from. This removes one register copy from the
 // code stream.
 //
-// In practice, our compiler doesn't take advantage of the 
+// In practice, our compiler doesn't take advantage of the
 // reduction in the # operations required, and inserts a
 // bunch of extra register copies anyway.
 // It actually hurts on AMD64.
@@ -408,7 +577,7 @@ SymCryptSha256Selftest()
 // At the moment we get an improvement from 19.76 c/B to 19.40 c/B on a Core 2 core.
 // We should probably tune this to the Atom CPU.
 //
-#if SYMCRYPT_CPU_X86 
+#if SYMCRYPT_CPU_X86
 #define USE_CSIGMA0_MULTIROT 1
 #define USE_CSIGMA1_MULTIROT 0
 #define USE_LSIGMA0_MULTIROT 0
@@ -501,7 +670,7 @@ LSIGMA1( UINT32 x )
 // We have unrolled the loop 16 times. This makes both the indices into
 // the ah array constant, and it makes the message addressing constant.
 // This provides a significant speed improvement, at the cost of making
-// the main loop about 4 kB in code. 
+// the main loop about 4 kB in code.
 //
 // The earlier implementation had the loop unrolled 8 times, and is
 // around 10 cycles/byte slower. If loading the code from disk takes
@@ -514,7 +683,7 @@ LSIGMA1( UINT32 x )
 //
 // r16 is the round number mod 16, r is the round number.
 // r16 is a separate macro argument because it is always a compile-time constant
-// which allows much better optimisations of the memory accesses.
+// which allows much better optimizations of the memory accesses.
 //
 // ah[ r16   &7] = h
 // ah[(r16+1)&7] = g;
@@ -542,7 +711,7 @@ LSIGMA1( UINT32 x )
 }
 
 //
-// Initial round that reads the message. 
+// Initial round that reads the message.
 // r is the round number 0..15
 //
 #define IROUND( r ) {\
@@ -552,7 +721,7 @@ LSIGMA1( UINT32 x )
     }
 
 //
-// Subsequent rounds. 
+// Subsequent rounds.
 // r16 is the round number mod 16. rb is the round number minus r16.
 //
 #define FROUND(r16, rb) {                                      \
@@ -567,7 +736,7 @@ LSIGMA1( UINT32 x )
 //
 VOID
 SYMCRYPT_CALL
-SymCryptSha256AppendBlocks_ul1( 
+SymCryptSha256AppendBlocks_ul1(
     _Inout_                 SYMCRYPT_SHA256_CHAINING_STATE *    pChain,
     _In_reads_( cbData )    PCBYTE                              pbData,
                             SIZE_T                              cbData,
@@ -578,17 +747,17 @@ SymCryptSha256AppendBlocks_ul1(
     int round;
     UINT32 Wt;
 
-    ah[7] = pChain->H[0];
-    ah[6] = pChain->H[1];
-    ah[5] = pChain->H[2];
-    ah[4] = pChain->H[3];
-    ah[3] = pChain->H[4];
-    ah[2] = pChain->H[5];
-    ah[1] = pChain->H[6];
-    ah[0] = pChain->H[7];
-
     while( cbData >= 64 )
     {
+        ah[7] = pChain->H[0];
+        ah[6] = pChain->H[1];
+        ah[5] = pChain->H[2];
+        ah[4] = pChain->H[3];
+        ah[3] = pChain->H[4];
+        ah[2] = pChain->H[5];
+        ah[1] = pChain->H[6];
+        ah[0] = pChain->H[7];
+
         //
         // initial rounds 1 to 16
         //
@@ -634,14 +803,14 @@ SymCryptSha256AppendBlocks_ul1(
             FROUND( 15, round );
         }
 
-        pChain->H[0] = ah[7] = ah[7] + pChain->H[0];
-        pChain->H[1] = ah[6] = ah[6] + pChain->H[1];
-        pChain->H[2] = ah[5] = ah[5] + pChain->H[2];
-        pChain->H[3] = ah[4] = ah[4] + pChain->H[3];
-        pChain->H[4] = ah[3] = ah[3] + pChain->H[4];
-        pChain->H[5] = ah[2] = ah[2] + pChain->H[5];
-        pChain->H[6] = ah[1] = ah[1] + pChain->H[6];
-        pChain->H[7] = ah[0] = ah[0] + pChain->H[7];
+        pChain->H[0] = ah[7] + pChain->H[0];
+        pChain->H[1] = ah[6] + pChain->H[1];
+        pChain->H[2] = ah[5] + pChain->H[2];
+        pChain->H[3] = ah[4] + pChain->H[3];
+        pChain->H[4] = ah[3] + pChain->H[4];
+        pChain->H[5] = ah[2] + pChain->H[5];
+        pChain->H[6] = ah[1] + pChain->H[6];
+        pChain->H[7] = ah[0] + pChain->H[7];
 
         pbData += 64;
         cbData -= 64;
@@ -660,7 +829,7 @@ SymCryptSha256AppendBlocks_ul1(
 
 VOID
 SYMCRYPT_CALL
-SymCryptSha256AppendBlocks_ul2( 
+SymCryptSha256AppendBlocks_ul2(
     _Inout_                 SYMCRYPT_SHA256_CHAINING_STATE *    pChain,
     _In_reads_( cbData )    PCBYTE                              pbData,
                             SIZE_T                              cbData,
@@ -707,7 +876,7 @@ SymCryptSha256AppendBlocks_ul2(
 
             //
             // Macro for one word of message expansion.
-            // Invariant: 
+            // Invariant:
             // on entry: a = W[r-1], b = W[r-2], d = W[r-16]
             // on exit:  W[r] computed, a = W[r-1], b = W[r], c = W[r-15]
             //
@@ -730,15 +899,15 @@ SymCryptSha256AppendBlocks_ul2(
         for( r=0; r<64; r += 4 )
         {
             //
-            // Loop invariant: 
+            // Loop invariant:
             // A, B, C, and D are the a,b,c,d values of the current state.
             // W[r] is the next expanded message word to be processed.
-            // W[r-8 .. r-5] contain the current state words h, g, f, e. 
+            // W[r-8 .. r-5] contain the current state words h, g, f, e.
             //
 
             //
             // Macro to compute one round
-            // 
+            //
             #define DO_ROUND( a, b, c, d, t, r ) \
                 t = W[r] + CSIGMA1( W[r-5] ) + W[r-8] + CH( W[r-5], W[r-6], W[r-7] ) + SymCryptSha256K[r]; \
                 W[r-4] = t + d; \
@@ -791,13 +960,16 @@ SymCryptSha256AppendBlocks_ul2(
 //
 // Don't omit frame pointer for XMM code; it isn't register-starved as much
 //
-#if SYMCRYPT_CPU_X86
+#if SYMCRYPT_CPU_X86 && SYMCRYPT_MS_VC
 #pragma optimize( "y", off )
 #endif
 
 //
 // Code that uses the XMM registers.
+// This code is currently unused. It was written in case it would provide better performance, but
+// it did not. We are retaining it in case it might be useful in a future CPU generation.
 //
+#if 0
 
 #define MAJXMM( x, y, z ) _mm_or_si128( _mm_and_si128( _mm_or_si128( z, y ), x ), _mm_and_si128( z, y ))
 #define CHXMM( x, y, z )  _mm_xor_si128( _mm_and_si128( _mm_xor_si128( z, y ), x ), z )
@@ -825,7 +997,7 @@ SymCryptSha256AppendBlocks_ul2(
 
 VOID
 SYMCRYPT_CALL
-SymCryptSha256AppendBlocks_xmm1( 
+SymCryptSha256AppendBlocks_xmm1(
     _Inout_                 SYMCRYPT_SHA256_CHAINING_STATE *    pChain,
     _In_reads_( cbData )    PCBYTE                              pbData,
                             SIZE_T                              cbData,
@@ -850,14 +1022,14 @@ SymCryptSha256AppendBlocks_xmm1(
     //
     // Copy the chaining state into the start of the buffer, order = h,g,f,e,d,c,b,a
     //
-    ha[7].m128i_u32[0] = pChain->H[0];
-    ha[6].m128i_u32[0] = pChain->H[1];
-    ha[5].m128i_u32[0] = pChain->H[2];
-    ha[4].m128i_u32[0] = pChain->H[3];
-    ha[3].m128i_u32[0] = pChain->H[4];
-    ha[2].m128i_u32[0] = pChain->H[5];
-    ha[1].m128i_u32[0] = pChain->H[6];
-    ha[0].m128i_u32[0] = pChain->H[7];
+    ha[7] = _mm_insert_epi32(ha[7], pChain->H[0], 0);
+    ha[6] = _mm_insert_epi32(ha[6], pChain->H[1], 0);
+    ha[5] = _mm_insert_epi32(ha[5], pChain->H[2], 0);
+    ha[4] = _mm_insert_epi32(ha[4], pChain->H[3], 0);
+    ha[3] = _mm_insert_epi32(ha[3], pChain->H[4], 0);
+    ha[2] = _mm_insert_epi32(ha[2], pChain->H[5], 0);
+    ha[1] = _mm_insert_epi32(ha[1], pChain->H[6], 0);
+    ha[0] = _mm_insert_epi32(ha[0], pChain->H[7], 0);
 
     buf[0] = ha[4];
     buf[1] = ha[5];
@@ -872,7 +1044,7 @@ SymCryptSha256AppendBlocks_xmm1(
         //
         for( r=0; r<16; r++ )
         {
-            W[r].m128i_u32[0] = SYMCRYPT_LOAD_MSBFIRST32( &pbData[ 4*r ] );
+            W[r] = _mm_insert_epi32(W[r], SYMCRYPT_LOAD_MSBFIRST32( &pbData[ 4*r ] ), 0);
         }
 
         //
@@ -887,7 +1059,7 @@ SymCryptSha256AppendBlocks_xmm1(
 
             //
             // Macro for one word of message expansion.
-            // Invariant: 
+            // Invariant:
             // on entry: a = W[r-1], b = W[r-2], d = W[r-16]
             // on exit:  W[r] computed, a = W[r-1], b = W[r], c = W[r-15]
             //
@@ -910,15 +1082,15 @@ SymCryptSha256AppendBlocks_xmm1(
         for( r=0; r<64; r += 4 )
         {
             //
-            // Loop invariant: 
+            // Loop invariant:
             // A, B, C, and D are the a,b,c,d values of the current state.
             // W[r] is the next expanded message word to be processed.
-            // W[r-8 .. r-5] contain the current state words h, g, f, e. 
+            // W[r-8 .. r-5] contain the current state words h, g, f, e.
             //
 
             //
             // Macro to compute one round
-            // 
+            //
             #define DO_ROUND( a, b, c, d, t, r ) \
                 t = W[r]; \
                 t = _mm_add_epi32( t, CSIGMA1XMM( W[r-5] ) ); \
@@ -952,14 +1124,14 @@ SymCryptSha256AppendBlocks_xmm1(
     //
     // Copy the chaining state back into the hash structure
     //
-    pChain->H[0] = ha[7].m128i_u32[0];
-    pChain->H[1] = ha[6].m128i_u32[0];
-    pChain->H[2] = ha[5].m128i_u32[0];
-    pChain->H[3] = ha[4].m128i_u32[0];
-    pChain->H[4] = ha[3].m128i_u32[0];
-    pChain->H[5] = ha[2].m128i_u32[0];
-    pChain->H[6] = ha[1].m128i_u32[0];
-    pChain->H[7] = ha[0].m128i_u32[0];
+    pChain->H[0] = _mm_extract_epi32(ha[7], 0);
+    pChain->H[1] = _mm_extract_epi32(ha[6], 0);
+    pChain->H[2] = _mm_extract_epi32(ha[5], 0);
+    pChain->H[3] = _mm_extract_epi32(ha[4], 0);
+    pChain->H[4] = _mm_extract_epi32(ha[3], 0);
+    pChain->H[5] = _mm_extract_epi32(ha[2], 0);
+    pChain->H[6] = _mm_extract_epi32(ha[1], 0);
+    pChain->H[7] = _mm_extract_epi32(ha[0], 0);
 
     *pcbRemaining = cbData;
 
@@ -983,7 +1155,7 @@ SymCryptSha256AppendBlocks_xmm1(
 //
 VOID
 SYMCRYPT_CALL
-SymCryptSha256AppendBlocks_xmm2( 
+SymCryptSha256AppendBlocks_xmm2(
     _Inout_                 SYMCRYPT_SHA256_CHAINING_STATE *    pChain,
     _In_reads_( cbData )    PCBYTE                              pbData,
                             SIZE_T                              cbData,
@@ -1012,7 +1184,7 @@ SymCryptSha256AppendBlocks_xmm2(
 
 
 //
-// Initial round that reads the message. 
+// Initial round that reads the message.
 // r is the round number 0..15
 //
 //    Wt = LOAD_MSBFIRST32( &pbData[ 4*r ] );\
@@ -1024,7 +1196,7 @@ SymCryptSha256AppendBlocks_xmm2(
     }
 
 //
-// Subsequent rounds. 
+// Subsequent rounds.
 // r16 is the round number mod 16. rb is the round number minus r16.
 //
 #define FROUND(r16, rb) { \
@@ -1036,7 +1208,7 @@ SymCryptSha256AppendBlocks_xmm2(
     while( cbData >= 64 )
     {
         //
-        // The code is faster if we directly access the W.ul array, rather than the W.xmm alias. 
+        // The code is faster if we directly access the W.ul array, rather than the W.xmm alias.
         // I think the compiler gets more confused if you use the W.xmm values.
         // We retain them in the union to ensure alignment
         //
@@ -1074,15 +1246,15 @@ SymCryptSha256AppendBlocks_xmm2(
         {
             __m128i Tmp;
 
-            Tmp = _mm_add_epi32( _mm_add_epi32( 
+            Tmp = _mm_add_epi32( _mm_add_epi32(
                     LSIGMA0XMM(_mm_loadu_si128( (__m128i *)&W.ul[1] )),
                     _mm_load_si128( (__m128i *)&W.ul[0] ) ),
                     _mm_loadu_si128( (__m128i *)&W.ul[9] ) );
-            
+
             //
             // The final part of the message schedule can be done in XMM registers, but it isn't worth it.
             // The rotates in XMM take two shifts and an OR/XOR, vs one instruction in integer registers.
-            // As the sigma1( W_{t-2} ) recursion component can only be computed 2 at a time 
+            // As the sigma1( W_{t-2} ) recursion component can only be computed 2 at a time
             // (because the result of the first two are the inputs to the second two)
             // you lose more than you gain by using XMM registers.
             //
@@ -1090,19 +1262,19 @@ SymCryptSha256AppendBlocks_xmm2(
             //Tmp = _mm_add_epi32( Tmp, LSIGMA1XMM( _mm_slli_si128( Tmp, 8 ) ) );
             //_mm_store_si128( (__m128i *)&W.ul[0], Tmp );
             //
-            
+
             _mm_store_si128( (__m128i *)&W.ul[0], Tmp );
             W.ul[0] += LSIGMA1( W.ul[14] );
             W.ul[1] += LSIGMA1( W.ul[15] );
             W.ul[2] += LSIGMA1( W.ul[0] );
             W.ul[3] += LSIGMA1( W.ul[1] );
-            
+
             FROUND(  0, round );
             FROUND(  1, round );
             FROUND(  2, round );
             FROUND(  3, round );
 
-            Tmp = _mm_add_epi32( _mm_add_epi32( 
+            Tmp = _mm_add_epi32( _mm_add_epi32(
                     LSIGMA0XMM(_mm_loadu_si128( (__m128i *)&W.ul[5] )),
                     _mm_load_si128( (__m128i *)&W.ul[4] ) ),
                     _mm_alignr_epi8( _mm_load_si128( (__m128i *)&W.ul[0] ), _mm_load_si128( (__m128i *)&W.ul[12] ), 4) );
@@ -1119,7 +1291,7 @@ SymCryptSha256AppendBlocks_xmm2(
             FROUND(  6, round );
             FROUND(  7, round );
 
-            Tmp = _mm_add_epi32( _mm_add_epi32( 
+            Tmp = _mm_add_epi32( _mm_add_epi32(
                     LSIGMA0XMM(_mm_loadu_si128( (__m128i *)&W.ul[9] )),
                     _mm_load_si128( (__m128i *)&W.ul[8] ) ),
                     _mm_loadu_si128( (__m128i *)&W.ul[1] ) );
@@ -1136,7 +1308,7 @@ SymCryptSha256AppendBlocks_xmm2(
             FROUND( 11, round );
 
 
-            Tmp = _mm_add_epi32( _mm_add_epi32( 
+            Tmp = _mm_add_epi32( _mm_add_epi32(
                     LSIGMA0XMM( _mm_alignr_epi8( _mm_load_si128( (__m128i *)&W.ul[0] ), _mm_load_si128( (__m128i *)&W.ul[12] ), 4) ),
                     _mm_load_si128( (__m128i *)&W.ul[12] ) ),
                     _mm_loadu_si128( (__m128i *)&W.ul[5] ) );
@@ -1181,10 +1353,13 @@ SymCryptSha256AppendBlocks_xmm2(
 #undef CROUND
 }
 
+#endif
+
 //
 // SHA-NI Implementation
 //
 
+#if SYMCRYPT_MS_VC
 // Intrinsic definitions included here
 // until the header is updated.
 // *******************************
@@ -1196,6 +1371,7 @@ extern __m128i _mm_sha256msg2_epu32(__m128i, __m128i);
 // *******************************
 // *******************************
 // *******************************
+#endif
 
 // For the SHA-NI implementation we will utilize 128-bit XMM registers. Each
 // XMM state will be denoted as (R_3, R_2, R_1, R_0), where each R_i
@@ -1236,7 +1412,7 @@ extern __m128i _mm_sha256msg2_epu32(__m128i, __m128i);
 // For rounds 16 - 51 we execute the following macro in a loop. For all the other rounds we
 // use specific code.
 //
-// The loop invariant to be satified at the beginning of iteration i (corresponding to rounds
+// The loop invariant to be satisfied at the beginning of iteration i (corresponding to rounds
 // (16+4*i) to (19+4*i) ) is the following:
 //      _MSG_0 = ( W_(19 + 4*i), W_(18 + 4*i), W_(17 + 4*i), W_(16 + 4*i) )
 //      _MSG_1 = ( X_(23 + 4*i), X_(22 + 4*i), X_(21 + 4*i), X_(20 + 4*i) )
@@ -1257,7 +1433,7 @@ extern __m128i _mm_sha256msg2_epu32(__m128i, __m128i);
 
 VOID
 SYMCRYPT_CALL
-SymCryptSha256AppendBlocks_shani( 
+SymCryptSha256AppendBlocks_shani(
     _Inout_                 SYMCRYPT_SHA256_CHAINING_STATE *    pChain,
     _In_reads_( cbData )    PCBYTE                              pbData,
                             SIZE_T                              cbData,
@@ -1425,7 +1601,7 @@ SymCryptSha256AppendBlocks_shani(
 /*
 ARM64 has special SHA-256 instructions
 
-SHA256H and SHA256H2 implement 4 rounds of SHA-256. The inputs are two registers containing the 256-bit state, 
+SHA256H and SHA256H2 implement 4 rounds of SHA-256. The inputs are two registers containing the 256-bit state,
 and one register containing 128 bits of expanded message plus the round constants.
 These instructions perform the same computation, but SHA256H returns the first half of the 256-bit result,
 and SHA256H2 returns the second half of the 256-bit result.
@@ -1442,7 +1618,7 @@ Output: [Sigma0(W_{t-15+i}) + W_{t-16+i}]
 SHA256SU1 is the second message schedule update function
 Takes 3 inputs and produces 1 output
 Input 1: Output of SHA256SU0: [Sigma0(W_{t-15+i}) + W_{t-16+i}]
-Input 2: 
+Input 2:
 Input 3: [W_{t-4+i}]
 
 */
@@ -1452,7 +1628,7 @@ Input 3: [W_{t-4+i}]
 
 VOID
 SYMCRYPT_CALL
-SymCryptSha256AppendBlocks_instr( 
+SymCryptSha256AppendBlocks_instr(
     _Inout_                 SYMCRYPT_SHA256_CHAINING_STATE *    pChain,
     _In_reads_( cbData )    PCBYTE                              pbData,
                             SIZE_T                              cbData,
@@ -1493,10 +1669,10 @@ SymCryptSha256AppendBlocks_instr(
 
     while( cbData >= 64 )
     {
-        W0 = neon_rev32q_8( vldq( &pbData[ 0] ) );
-        W1 = neon_rev32q_8( vldq( &pbData[16] ) );
-        W2 = neon_rev32q_8( vldq( &pbData[32] ) );
-        W3 = neon_rev32q_8( vldq( &pbData[48] ) );
+        W0 = vrev32q_u8( vldq( &pbData[ 0] ) );
+        W1 = vrev32q_u8( vldq( &pbData[16] ) );
+        W2 = vrev32q_u8( vldq( &pbData[32] ) );
+        W3 = vrev32q_u8( vldq( &pbData[48] ) );
 
         //
         // The sha256h/sha256h2 instructions overwrite one of the two state input registers.
@@ -1504,8 +1680,8 @@ SymCryptSha256AppendBlocks_instr(
         //
 #define ROUNDOP {\
     t = ABCD;\
-    ABCD = neon_sha256h ( ABCD, EFGH, Wr );\
-    EFGH = neon_sha256h2( EFGH, t, Wr );\
+    ABCD = vsha256hq_u32 ( ABCD, EFGH, Wr );\
+    EFGH = vsha256h2q_u32( EFGH, t, Wr );\
     }
 
         Wr = vaddq_u32( W0, K0 );
@@ -1517,65 +1693,65 @@ SymCryptSha256AppendBlocks_instr(
         Wr = vaddq_u32( W3, K3 );
         ROUNDOP;
 
-        t = neon_sha256su0( W0, W1 );
-        W0 = neon_sha256su1( t, W2, W3 );
+        t = vsha256su0q_u32( W0, W1 );
+        W0 = vsha256su1q_u32( t, W2, W3 );
         Wr = vaddq_u32( W0, K4 );
         ROUNDOP;
 
-        t = neon_sha256su0( W1, W2 );
-        W1 = neon_sha256su1( t, W3, W0 );
+        t = vsha256su0q_u32( W1, W2 );
+        W1 = vsha256su1q_u32( t, W3, W0 );
         Wr = vaddq_u32( W1, K5 );
         ROUNDOP;
 
-        t = neon_sha256su0( W2, W3 );
-        W2 = neon_sha256su1( t, W0, W1 );
+        t = vsha256su0q_u32( W2, W3 );
+        W2 = vsha256su1q_u32( t, W0, W1 );
         Wr = vaddq_u32( W2, K6 );
         ROUNDOP;
 
-        t = neon_sha256su0( W3, W0 );
-        W3 = neon_sha256su1( t, W1, W2 );
+        t = vsha256su0q_u32( W3, W0 );
+        W3 = vsha256su1q_u32( t, W1, W2 );
         Wr = vaddq_u32( W3, K7 );
         ROUNDOP;
 
 
-        t = neon_sha256su0( W0, W1 );
-        W0 = neon_sha256su1( t, W2, W3 );
+        t = vsha256su0q_u32( W0, W1 );
+        W0 = vsha256su1q_u32( t, W2, W3 );
         Wr = vaddq_u32( W0, K8 );
         ROUNDOP;
 
-        t = neon_sha256su0( W1, W2 );
-        W1 = neon_sha256su1( t, W3, W0 );
+        t = vsha256su0q_u32( W1, W2 );
+        W1 = vsha256su1q_u32( t, W3, W0 );
         Wr = vaddq_u32( W1, K9 );
         ROUNDOP;
 
-        t = neon_sha256su0( W2, W3 );
-        W2 = neon_sha256su1( t, W0, W1 );
+        t = vsha256su0q_u32( W2, W3 );
+        W2 = vsha256su1q_u32( t, W0, W1 );
         Wr = vaddq_u32( W2, K10 );
         ROUNDOP;
 
-        t = neon_sha256su0( W3, W0 );
-        W3 = neon_sha256su1( t, W1, W2 );
+        t = vsha256su0q_u32( W3, W0 );
+        W3 = vsha256su1q_u32( t, W1, W2 );
         Wr = vaddq_u32( W3, K11 );
         ROUNDOP;
 
 
-        t = neon_sha256su0( W0, W1 );
-        W0 = neon_sha256su1( t, W2, W3 );
+        t = vsha256su0q_u32( W0, W1 );
+        W0 = vsha256su1q_u32( t, W2, W3 );
         Wr = vaddq_u32( W0, K12 );
         ROUNDOP;
 
-        t = neon_sha256su0( W1, W2 );
-        W1 = neon_sha256su1( t, W3, W0 );
+        t = vsha256su0q_u32( W1, W2 );
+        W1 = vsha256su1q_u32( t, W3, W0 );
         Wr = vaddq_u32( W1, K13 );
         ROUNDOP;
 
-        t = neon_sha256su0( W2, W3 );
-        W2 = neon_sha256su1( t, W0, W1 );
+        t = vsha256su0q_u32( W2, W3 );
+        W2 = vsha256su1q_u32( t, W0, W1 );
         Wr = vaddq_u32( W2, K14 );
         ROUNDOP;
 
-        t = neon_sha256su0( W3, W0 );
-        W3 = neon_sha256su1( t, W1, W2 );
+        t = vsha256su0q_u32( W3, W0 );
+        W3 = vsha256su1q_u32( t, W1, W2 );
         Wr = vaddq_u32( W3, K15 );
         ROUNDOP;
 
@@ -1607,18 +1783,45 @@ SymCryptSha256AppendBlocks_instr(
 //FORCEINLINE
 VOID
 SYMCRYPT_CALL
-SymCryptSha256AppendBlocks( 
-    _Inout_                 SYMCRYPT_SHA256_CHAINING_STATE *    pChain,
-    _In_reads_( cbData )    PCBYTE                              pbData,
-                            SIZE_T                              cbData,
-    _Out_                   SIZE_T                            * pcbRemaining )
+SymCryptSha256AppendBlocks(
+    _Inout_                 SYMCRYPT_SHA256_CHAINING_STATE* pChain,
+    _In_reads_(cbData)      PCBYTE                          pbData,
+                            SIZE_T                          cbData,
+    _Out_                   SIZE_T*                         pcbRemaining)
 {
 #if SYMCRYPT_CPU_AMD64
-    if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURES_FOR_SHANI_CODE ) )
+
+    SYMCRYPT_EXTENDED_SAVE_DATA SaveData;
+
+    if (SYMCRYPT_CPU_FEATURES_PRESENT(SYMCRYPT_CPU_FEATURES_FOR_SHANI_CODE) &&
+        SymCryptSaveXmm(&SaveData) == SYMCRYPT_NO_ERROR)
     {
-        SymCryptSha256AppendBlocks_shani( pChain, pbData, cbData, pcbRemaining );
-    } else {
-        SymCryptSha256AppendBlocks_ul1( pChain, pbData, cbData, pcbRemaining );
+        SymCryptSha256AppendBlocks_shani(pChain, pbData, cbData, pcbRemaining);
+
+        SymCryptRestoreXmm(&SaveData);
+    }
+    // Temporarily disabling use of Ymm in SHA2
+    // else if (SYMCRYPT_CPU_FEATURES_PRESENT(SYMCRYPT_CPU_FEATURE_AVX2 | SYMCRYPT_CPU_FEATURE_BMI2) &&
+    //         SymCryptSaveYmm(&SaveData) == SYMCRYPT_NO_ERROR)
+    // {
+    //     //SymCryptSha256AppendBlocks_ul1(pChain, pbData, cbData, pcbRemaining);
+    //     //SymCryptSha256AppendBlocks_ymm_8blocks(pChain, pbData, cbData, pcbRemaining);
+    //     SymCryptSha256AppendBlocks_ymm_avx2_asm(pChain, pbData, cbData, pcbRemaining);
+
+    //     SymCryptRestoreYmm(&SaveData);
+    // }
+    else if (SYMCRYPT_CPU_FEATURES_PRESENT(SYMCRYPT_CPU_FEATURE_SSSE3 | SYMCRYPT_CPU_FEATURE_BMI2) &&
+            SymCryptSaveXmm(&SaveData) == SYMCRYPT_NO_ERROR)
+    {
+        //SymCryptSha256AppendBlocks_xmm_4blocks(pChain, pbData, cbData, pcbRemaining);
+        SymCryptSha256AppendBlocks_xmm_ssse3_asm(pChain, pbData, cbData, pcbRemaining);
+ 
+        SymCryptRestoreXmm(&SaveData);
+    }
+    else
+    {
+       SymCryptSha256AppendBlocks_ul1( pChain, pbData, cbData, pcbRemaining );
+       //SymCryptSha256AppendBlocks_ul2(pChain, pbData, cbData, pcbRemaining);
     }
 #elif SYMCRYPT_CPU_X86
     SYMCRYPT_EXTENDED_SAVE_DATA  SaveData;
@@ -1628,7 +1831,14 @@ SymCryptSha256AppendBlocks(
     {
         SymCryptSha256AppendBlocks_shani( pChain, pbData, cbData, pcbRemaining );
         SymCryptRestoreXmm( &SaveData );
-    } else {
+    } 
+    else if (SYMCRYPT_CPU_FEATURES_PRESENT(SYMCRYPT_CPU_FEATURE_SSSE3 | SYMCRYPT_CPU_FEATURE_BMI2) 
+            && SymCryptSaveXmm(&SaveData) == SYMCRYPT_NO_ERROR)
+    {
+        SymCryptSha256AppendBlocks_xmm_4blocks(pChain, pbData, cbData, pcbRemaining);
+        SymCryptRestoreXmm(&SaveData);
+    }
+    else {
         SymCryptSha256AppendBlocks_ul1( pChain, pbData, cbData, pcbRemaining );
     }
 #elif SYMCRYPT_CPU_ARM64

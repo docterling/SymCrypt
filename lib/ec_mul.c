@@ -35,11 +35,11 @@ SymCryptPrecomputation(
     _In_reads_( SYMCRYPT_ECURVE_SW_MAX_NPRECOMP_POINTS )
             PSYMCRYPT_ECPOINT *     poPIs,
     _Out_   PSYMCRYPT_ECPOINT       poQ,
-    _Out_writes_bytes_opt_( cbScratch ) 
+    _Out_writes_bytes_( cbScratch )
             PBYTE               pbScratch,
-            SIZE_T              cbScratch
-)
+            SIZE_T              cbScratch )
 {
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poQ->pCurve) );
     // Calculation for Q = 2*P
     SymCryptEcpointDouble( pCurve, poPIs[0], poQ, 0, pbScratch, cbScratch );
 
@@ -53,14 +53,14 @@ SymCryptPrecomputation(
 VOID
 SYMCRYPT_CALL
 SymCryptOfflinePrecomputation(
-    _In_ PSYMCRYPT_ECURVE pCurve,
+    _In_    PSYMCRYPT_ECURVE pCurve,
     _Out_writes_bytes_( cbScratch )
             PBYTE         pbScratch,
             SIZE_T        cbScratch )
 {
     PSYMCRYPT_ECPOINT poQ = NULL;
 
-    UINT32 cbEcpoint = SymCryptSizeofEcpointEx( pCurve->cbModElement, SYMCRYPT_INTERNAL_NUMOF_COORDINATES( pCurve->eCoordinates ) );
+    UINT32 cbEcpoint = SymCryptSizeofEcpointFromCurve( pCurve );
 
     SYMCRYPT_ASSERT( cbScratch >= cbEcpoint + SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pCurve->FModDigits ) );
 
@@ -85,7 +85,6 @@ SymCryptOfflinePrecomputation(
 // The following is an adaptation of algorithm 1: "Variable-base scalar multiplication
 // using the fixed-window method"
 //
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptEcpointScalarMulFixedWindow(
@@ -93,9 +92,9 @@ SymCryptEcpointScalarMulFixedWindow(
     _In_    PCSYMCRYPT_INT          piScalar,
     _In_opt_
             PCSYMCRYPT_ECPOINT      poSrc,
-    _In_    UINT32                  flags,
+            UINT32                  flags,
     _Out_   PSYMCRYPT_ECPOINT       poDst,
-    _Out_writes_bytes_opt_( cbScratch ) 
+    _Out_writes_bytes_( cbScratch )
             PBYTE               pbScratch,
             SIZE_T              cbScratch )
 {
@@ -135,6 +134,9 @@ SymCryptEcpointScalarMulFixedWindow(
     PSYMCRYPT_MODELEMENT    peQY = NULL;
     PSYMCRYPT_MODELEMENT    peQZ = NULL;
 
+    SIZE_T cbEcpoint = SymCryptSizeofEcpointFromCurve( pCurve );
+    SIZE_T cbScalar = SymCryptSizeofIntFromDigits( pCurve->GOrdDigits );
+
     // Make sure we only specify the correct flags
     if ((flags & ~SYMCRYPT_FLAG_ECC_LL_COFACTOR_MUL) != 0)
     {
@@ -149,9 +151,17 @@ SymCryptEcpointScalarMulFixedWindow(
         bPrecompOffline = TRUE;
     }
 
-    SYMCRYPT_ASSERT( (pCurve->type == SYMCRYPT_ECURVE_TYPE_SHORT_WEIERSTRASS) ||
-                     (pCurve->type == SYMCRYPT_ECURVE_TYPE_TWISTED_EDWARDS) );
+    SYMCRYPT_ASSERT( SYMCRYPT_CURVE_IS_SHORT_WEIERSTRASS_TYPE(pCurve) ||
+                     SYMCRYPT_CURVE_IS_TWISTED_EDWARDS_TYPE(pCurve) );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poSrc->pCurve) && SymCryptEcurveIsSame(pCurve, poDst->pCurve) );
     SYMCRYPT_ASSERT( cbScratch >= SYMCRYPT_INTERNAL_SCRATCH_BYTES_FOR_SCALAR_ECURVE_OPERATIONS(pCurve, 1) );
+
+    SYMCRYPT_ASSERT( cbScratch >=
+                        pCurve->cbModElement +
+                        (nPrecompPoints+2)*cbEcpoint +
+                        2*cbScalar +
+                        ((2*nRecodedDigits*sizeof(UINT32) + SYMCRYPT_ASYM_ALIGN_VALUE - 1)/SYMCRYPT_ASYM_ALIGN_VALUE )*SYMCRYPT_ASYM_ALIGN_VALUE +
+                        SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS( pCurve ) );
 
     // Creating temporary modelement
     peT = SymCryptModElementCreate( pbScratch, pCurve->cbModElement, FMod );
@@ -168,34 +178,29 @@ SymCryptEcpointScalarMulFixedWindow(
         }
         else
         {
-            poPIs[i] = SymCryptEcpointCreate( pbScratch, SymCryptSizeofEcpointFromCurve( pCurve ), pCurve );
+            poPIs[i] = SymCryptEcpointCreate( pbScratch, cbEcpoint, pCurve );
             SYMCRYPT_ASSERT( poPIs[i] != NULL );
-            pbScratch += SymCryptSizeofEcpointFromCurve( pCurve );
+            pbScratch += cbEcpoint;
         }
     }
 
     // Creating temporary points
-	// dcl - there is a pattern of calling a function to get a parameter for SymCryptEcpointCreate
-	// and then calling it again to increment pbScratch. A nice compiler might optimize this out for
-	// you. I am not sure you should assume the compiler is always that nice, and a temporary variable
-	// would be better. Also, if there is some error return, or out of bounds return, that could be checked
-	// prior to possibly incrementing a pointer into an undefined space.
-    poQ = SymCryptEcpointCreate( pbScratch, SymCryptSizeofEcpointFromCurve( pCurve ), pCurve );
+    poQ = SymCryptEcpointCreate( pbScratch, cbEcpoint, pCurve );
     SYMCRYPT_ASSERT( poQ != NULL );
-    pbScratch += SymCryptSizeofEcpointFromCurve( pCurve );
+    pbScratch += cbEcpoint;
 
-    poTmp = SymCryptEcpointCreate( pbScratch, SymCryptSizeofEcpointFromCurve( pCurve ), pCurve );
+    poTmp = SymCryptEcpointCreate( pbScratch, cbEcpoint, pCurve );
     SYMCRYPT_ASSERT( poTmp != NULL );
-    pbScratch += SymCryptSizeofEcpointFromCurve( pCurve );
+    pbScratch += cbEcpoint;
 
     // Creating temporary scalar for the remainder
-    piRem = SymCryptIntCreate( pbScratch, SymCryptSizeofIntFromDigits( pCurve->GOrdDigits ), pCurve->GOrdDigits );
+    piRem = SymCryptIntCreate( pbScratch, cbScalar, pCurve->GOrdDigits );
     SYMCRYPT_ASSERT( piRem != NULL);
-    pbScratch += SymCryptSizeofIntFromDigits( pCurve->GOrdDigits );
+    pbScratch += cbScalar;
 
-    piTmp = SymCryptIntCreate( pbScratch, SymCryptSizeofIntFromDigits( pCurve->GOrdDigits ), pCurve->GOrdDigits );
+    piTmp = SymCryptIntCreate( pbScratch, cbScalar, pCurve->GOrdDigits );
     SYMCRYPT_ASSERT( piTmp != NULL);
-    pbScratch += SymCryptSizeofIntFromDigits( pCurve->GOrdDigits );
+    pbScratch += cbScalar;
 
     // Fixing pointers to recoded digits (be careful that the remaining space is SYMCRYPT_ASYM_ALIGNed)
     absofKIs = (PUINT32) pbScratch;
@@ -205,12 +210,15 @@ SymCryptEcpointScalarMulFixedWindow(
     pbScratch = (PBYTE) ( ((ULONG_PTR)pbScratch + SYMCRYPT_ASYM_ALIGN_VALUE - 1) & ~(SYMCRYPT_ASYM_ALIGN_VALUE - 1) );
 
     // Fixing remaining scratch space size
-    cbScratch -= ( pCurve->cbModElement + (nPrecompPoints+2)*SymCryptSizeofEcpointFromCurve( pCurve ) + 2*SymCryptSizeofIntFromDigits( pCurve->GOrdDigits ) );
+    cbScratch -= ( pCurve->cbModElement + (nPrecompPoints+2)*cbEcpoint + 2*cbScalar );
     cbScratch -= (((2*nRecodedDigits*sizeof(UINT32) + SYMCRYPT_ASYM_ALIGN_VALUE - 1)/SYMCRYPT_ASYM_ALIGN_VALUE )*SYMCRYPT_ASYM_ALIGN_VALUE);
 
     //
     // Main algorithm
     //
+
+    // It is the caller's responsibility to ensure that the provided piScalar <= GOrd, double check this in debug mode
+    SYMCRYPT_ASSERT( !SymCryptIntIsLessThan( SymCryptIntFromModulus( pCurve->GOrd ), piScalar ) );
 
     // Store k into an int
     SymCryptIntCopy( piScalar, piRem );
@@ -305,6 +313,9 @@ SymCryptEcpointScalarMulFixedWindow(
         }
     }
 
+    // If the resultant point is zero, ensure it will be set to the canonical zero point
+    fZero |= SymCryptEcpointIsZero( pCurve, poQ, pbScratch, cbScratch );
+
     // Set the zero point
     SymCryptEcpointSetZero( pCurve, poTmp, pbScratch, cbScratch );
     SymCryptEcpointMaskedCopy( pCurve, poTmp, poQ, fZero );
@@ -323,19 +334,17 @@ exit:
 // The following is an adaptation of algorithm 9: "Double-scalar multiplication using the
 // width-w NAF with interleaving"
 //
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptEcpointMultiScalarMulWnafWithInterleaving(
-    _In_    PCSYMCRYPT_ECURVE       pCurve,
-    _In_    PCSYMCRYPT_INT *        piSrcScalarArray,
-    _In_    PCSYMCRYPT_ECPOINT *    poSrcEcpointArray,
-    _In_    UINT32                  nPoints,
-    _In_    UINT32                  flags,
-    _Out_   PSYMCRYPT_ECPOINT       poDst,
-    _Out_writes_bytes_opt_( cbScratch )
-            PBYTE               pbScratch,
-            SIZE_T              cbScratch )
+    _In_                            PCSYMCRYPT_ECURVE       pCurve,
+    _In_reads_( nPoints )           PCSYMCRYPT_INT *        piSrcScalarArray,
+    _In_reads_( nPoints )           PCSYMCRYPT_ECPOINT *    poSrcEcpointArray,
+    _In_                            UINT32                  nPoints,
+    _In_                            UINT32                  flags,
+    _Out_                           PSYMCRYPT_ECPOINT       poDst,
+    _Out_writes_bytes_( cbScratch ) PBYTE                   pbScratch,
+                                    SIZE_T                  cbScratch )
 {
     SYMCRYPT_ERROR  scError = SYMCRYPT_MEMORY_ALLOCATION_FAILURE;
 
@@ -362,6 +371,12 @@ SymCryptEcpointMultiScalarMulWnafWithInterleaving(
     PUINT32                 absofKIs = NULL;
     PUINT32                 sigofKIs = NULL;
     // ===================================================
+
+    SIZE_T cbEcpoint = SymCryptSizeofEcpointFromCurve( pCurve );
+    SIZE_T cbScalar = SymCryptSizeofIntFromDigits( pCurve->GOrdDigits );
+
+    PBYTE pbScratchEnd = pbScratch + cbScratch;
+    UNREFERENCED_PARAMETER( pbScratchEnd ); // Used in asserts
 
     // Make sure we only specify the correct flags
     if ((flags & ~(SYMCRYPT_FLAG_DATA_PUBLIC | SYMCRYPT_FLAG_ECC_LL_COFACTOR_MUL)) != 0)
@@ -391,12 +406,12 @@ SymCryptEcpointMultiScalarMulWnafWithInterleaving(
         goto exit;
     }
 
-    SYMCRYPT_ASSERT( (pCurve->type == SYMCRYPT_ECURVE_TYPE_SHORT_WEIERSTRASS) ||
-                     (pCurve->type == SYMCRYPT_ECURVE_TYPE_TWISTED_EDWARDS) );
+    SYMCRYPT_ASSERT( SYMCRYPT_CURVE_IS_SHORT_WEIERSTRASS_TYPE(pCurve) ||
+                     SYMCRYPT_CURVE_IS_TWISTED_EDWARDS_TYPE(pCurve) );
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poDst->pCurve) );
     SYMCRYPT_ASSERT( cbScratch >= SYMCRYPT_INTERNAL_SCRATCH_BYTES_FOR_SCALAR_ECURVE_OPERATIONS(pCurve, nPoints) );
 
     // Creating temporary precomputed points (if needed for the first point)
-    SYMCRYPT_ASSERT( nPoints*nPrecompPoints <= SYMCRYPT_ECURVE_SW_MAX_NPRECOMP_POINTS );
     for (i=0; i<nPoints*nPrecompPoints; i++)
     {
         if ((i<nPrecompPoints) && bPrecompOffline)
@@ -405,29 +420,31 @@ SymCryptEcpointMultiScalarMulWnafWithInterleaving(
         }
         else
         {
-            poPIs[i] = SymCryptEcpointCreate( pbScratch, SymCryptSizeofEcpointFromCurve( pCurve ), pCurve );
+            SYMCRYPT_ASSERT( pbScratch + cbEcpoint <= pbScratchEnd );
+            poPIs[i] = SymCryptEcpointCreate( pbScratch, cbEcpoint, pCurve );
             SYMCRYPT_ASSERT( poPIs[i] != NULL );
-            pbScratch += SymCryptSizeofEcpointFromCurve( pCurve );
+            pbScratch += cbEcpoint;
         }
     }
 
+    SYMCRYPT_ASSERT( pbScratch + 2*cbEcpoint + 2*cbScalar + 2*nPoints*nRecodedDigits*sizeof(UINT32) <= pbScratchEnd );
     // Creating temporary points
-    poQ = SymCryptEcpointCreate( pbScratch, SymCryptSizeofEcpointFromCurve( pCurve ), pCurve );
+    poQ = SymCryptEcpointCreate( pbScratch, cbEcpoint, pCurve );
     SYMCRYPT_ASSERT( poQ != NULL );
-    pbScratch += SymCryptSizeofEcpointFromCurve( pCurve );
+    pbScratch += cbEcpoint;
 
-    poTmp = SymCryptEcpointCreate( pbScratch, SymCryptSizeofEcpointFromCurve( pCurve ), pCurve );
+    poTmp = SymCryptEcpointCreate( pbScratch, cbEcpoint, pCurve );
     SYMCRYPT_ASSERT( poTmp != NULL );
-    pbScratch += SymCryptSizeofEcpointFromCurve( pCurve );
+    pbScratch += cbEcpoint;
 
     // Creating temporary scalar for the remainder
-    piRem = SymCryptIntCreate( pbScratch, SymCryptSizeofIntFromDigits( pCurve->GOrdDigits ), pCurve->GOrdDigits );
+    piRem = SymCryptIntCreate( pbScratch, cbScalar, pCurve->GOrdDigits );
     SYMCRYPT_ASSERT( piRem != NULL);
-    pbScratch += SymCryptSizeofIntFromDigits( pCurve->GOrdDigits );
+    pbScratch += cbScalar;
 
-    piTmp = SymCryptIntCreate( pbScratch, SymCryptSizeofIntFromDigits( pCurve->GOrdDigits ), pCurve->GOrdDigits );
+    piTmp = SymCryptIntCreate( pbScratch, cbScalar, pCurve->GOrdDigits );
     SYMCRYPT_ASSERT( piTmp != NULL);
-    pbScratch += SymCryptSizeofIntFromDigits( pCurve->GOrdDigits );
+    pbScratch += cbScalar;
 
     // Fixing pointers to recoded digits (be careful that the remaining space is SYMCRYPT_ASYM_ALIGNed)
     absofKIs = (PUINT32) pbScratch;
@@ -439,7 +456,7 @@ SymCryptEcpointMultiScalarMulWnafWithInterleaving(
     // Fixing remaining scratch space size
 	// dcl - my guess is that the values here are small enough that there should not be a problem, but
 	// would be better if that were documented.
-    cbScratch -= ( (nPoints*nPrecompPoints+2)*SymCryptSizeofEcpointFromCurve( pCurve ) + 2*SymCryptSizeofIntFromDigits( pCurve->GOrdDigits ) );
+    cbScratch -= ( (nPoints*nPrecompPoints+2)*cbEcpoint + 2*cbScalar );
     cbScratch -= (((2*nPoints*nRecodedDigits*sizeof(UINT32) + SYMCRYPT_ASYM_ALIGN_VALUE - 1)/SYMCRYPT_ASYM_ALIGN_VALUE )*SYMCRYPT_ASYM_ALIGN_VALUE);
 
     //
@@ -447,6 +464,8 @@ SymCryptEcpointMultiScalarMulWnafWithInterleaving(
     //
     for (j = 0; j<nPoints; j++)
     {
+        SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poSrcEcpointArray[j]->pCurve) );
+
         // Check if k is 0 or if the src point is zero
         fZero[j] = ( SymCryptIntIsEqualUint32( piSrcScalarArray[j], 0 ) | SymCryptEcpointIsZero( pCurve, poSrcEcpointArray[j], pbScratch, cbScratch ) );
         fZeroTot &= fZero[j];
@@ -482,7 +501,7 @@ SymCryptEcpointMultiScalarMulWnafWithInterleaving(
 
             for (j = 0; j<nPoints; j++)
             {
-                if (sigofKIs[j*nRecodedDigits + i] != 0)
+                if (!fZero[j] && sigofKIs[j*nRecodedDigits + i] != 0)
                 {
                     SymCryptEcpointCopy( pCurve, poPIs[j*nPrecompPoints + absofKIs[j*nRecodedDigits + i]/2], poTmp );
 
@@ -506,6 +525,13 @@ SymCryptEcpointMultiScalarMulWnafWithInterleaving(
         }
     }
 
+    // If the resultant point is zero, ensure it will be set to the canonical zero point
+    if ( SymCryptEcpointIsZero( pCurve, poQ, pbScratch, cbScratch ) )
+    {
+        // Set poQ to zero point
+        SymCryptEcpointSetZero( pCurve, poQ, pbScratch, cbScratch );
+    }
+
     // Copy the result to the destination (normalized flag == FALSE)
     SymCryptEcpointCopy( pCurve, poQ, poDst );
 
@@ -521,12 +547,14 @@ SymCryptEcpointGenericSetRandom(
     _In_    PCSYMCRYPT_ECURVE       pCurve,
     _Out_   PSYMCRYPT_INT           piScalar,
     _Out_   PSYMCRYPT_ECPOINT       poDst,
-    _Out_writes_bytes_opt_( cbScratch )
+    _Out_writes_bytes_( cbScratch )
             PBYTE                   pbScratch,
             SIZE_T                  cbScratch )
 {
     PSYMCRYPT_MODELEMENT peScalar = NULL;
+    SYMCRYPT_ASSERT( SymCryptEcurveIsSame(pCurve, poDst->pCurve) );
     SYMCRYPT_ASSERT( cbScratch >= SYMCRYPT_INTERNAL_SCRATCH_BYTES_FOR_SCALAR_ECURVE_OPERATIONS(pCurve, 1) );
+    SYMCRYPT_ASSERT( cbScratch >= pCurve->cbModElement );
 
     peScalar = SymCryptModElementCreate( pbScratch, pCurve->cbModElement, pCurve->GOrd );
     SYMCRYPT_ASSERT( peScalar != NULL );
@@ -538,5 +566,6 @@ SymCryptEcpointGenericSetRandom(
     SymCryptModElementToInt( pCurve->GOrd, peScalar, piScalar, pbScratch + pCurve->cbModElement, cbScratch - pCurve->cbModElement );
 
     // Do the multiplication (pass over the entire scratch space as it is not needed anymore)
+    // !! Explicitly not checking the error return here as the only error is from specifying invalid flags !!
     SymCryptEcpointScalarMul( pCurve, piScalar, NULL, 0, poDst, pbScratch, cbScratch );
 }

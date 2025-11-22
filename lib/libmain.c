@@ -1,5 +1,5 @@
 //
-// libmain.c    
+// libmain.c
 // General routines for the SymCrypt library
 //
 // Copyright (c) Microsoft Corporation. Licensed under the MIT license.
@@ -7,49 +7,76 @@
 
 #include "precomp.h"
 
-#define EQU =
 #include "C_asm_shared.inc"
 
-// The following global g_SymCryptFlags has to be at least 32 
-// bits because the iOS environment has interlocked function 
-// support for variables of size at least 32 bits. 
+#include "buildInfo.h"
+
+// The following global g_SymCryptFlags has to be at least 32
+// bits because the iOS environment has interlocked function
+// support for variables of size at least 32 bits.
 // The relevant function is OSAtomicOr32Barrier.
 UINT32 g_SymCryptFlags = 0;
 
 SYMCRYPT_CPU_FEATURES g_SymCryptCpuFeaturesNotPresent = (SYMCRYPT_CPU_FEATURES) ~0;
 SYMCRYPT_CPU_FEATURES g_SymCryptCpuFeaturesPresentCheck = 0;
 
-#if defined( DBG )
+#if SYMCRYPT_DEBUG
 
 SYMCRYPT_NOINLINE
 VOID
 SYMCRYPT_CALL
-SymCryptLibraryWasNotInitialized()
+SymCryptLibraryWasNotInitialized(void)
 {
     SymCryptFatal( 'init' );    // Function name helps figure out what the problem is.
 }
 
 #endif
 
+const CHAR * const SymCryptBuildString =
+        "v" SYMCRYPT_BUILD_INFO_VERSION
+        "_" SYMCRYPT_BUILD_INFO_BRANCH
+        "_" SYMCRYPT_BUILD_INFO_COMMIT
+        "_" SYMCRYPT_BUILD_INFO_TIMESTAMP;
+
 VOID
 SYMCRYPT_CALL
-SymCryptInitEnvCommon()
-// Returns TRUE if the initializatoin steps have to be performed.
+SymCryptInitEnvCommon( UINT32 version )
+// Returns TRUE if the initialization steps have to be performed.
 {
     UINT32 tmp;
+
+    const CHAR * p;
+
+    // Assertion that verifies that the calling application was compiled with
+    // the same version header files as the library.
+    if( version != SYMCRYPT_API_VERSION )
+    {
+        SymCryptFatal( 'apiv' );
+    }
 
     //
     // Use an interlocked to set the flag in case we add other flags
     // that are modified by different threads.
     //
-    ATOMIC_OR32( &g_SymCryptFlags, SYMCRYPT_FLAG_LIB_INITIALIZED );
+    SYMCRYPT_ATOMIC_OR32_PRE_RELAXED( &g_SymCryptFlags, SYMCRYPT_FLAG_LIB_INITIALIZED );
 
     //
     // Do a forced write of our code version. This ensures that the code
     // version is part of the binary, so we can look at a binary and figure
     // out which version of SymCrypt it was linked with.
     //
-    SYMCRYPT_FORCE_WRITE32( &tmp, SYMCRYPT_CODE_VERSION );
+    SYMCRYPT_FORCE_WRITE32( &tmp, SYMCRYPT_API_VERSION );
+
+    //
+    // Force the build string to be in memory, because otherwise the
+    // compiler might get smart and remove it.
+    // This ensures we can always track back to the SymCrypt source code from
+    // any binary that links this library
+    //
+    for( p = SymCryptBuildString; *p!=0; p++ )
+    {
+        SYMCRYPT_FORCE_WRITE8( (PBYTE) &tmp, *p );
+    }
 
     //
     // Make an inverted copy of the CPU detection results.
@@ -80,7 +107,7 @@ SymCryptFatalHang( UINT32 fatalCode )
     UINT32   fcode;
 
     //
-    // Put the fatal code in a location we can find 
+    // Put the fatal code in a location we can find
     //
     SYMCRYPT_FORCE_WRITE32( &fcode, fatalCode );
 
@@ -103,7 +130,7 @@ SymCryptWipe( _Out_writes_bytes_( cbData ) PVOID pbData, SIZE_T cbData )
 
 #else
 //
-// Generic but slow wipe routine. 
+// Generic but slow wipe routine.
 //
 VOID
 SYMCRYPT_CALL
@@ -122,7 +149,7 @@ SymCryptWipe( _Out_writes_bytes_( cbData ) PVOID pbData, SIZE_T cbData )
 #if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_ARM
 VOID
 SYMCRYPT_CALL
-SymCryptXorBytes( 
+SymCryptXorBytes(
     _In_reads_( cbBytes )   PCBYTE  pbSrc1,
     _In_reads_( cbBytes )   PCBYTE  pbSrc2,
     _Out_writes_( cbBytes ) PBYTE   pbResult,
@@ -140,8 +167,8 @@ SymCryptXorBytes(
         d[1] = s1[1] ^ s2[1];
         d[2] = s1[2] ^ s2[2];
         d[3] = s1[3] ^ s2[3];
-    } 
-    else 
+    }
+    else
     {
         i = 0;
         while( i + 3 < cbBytes )
@@ -162,7 +189,7 @@ SymCryptXorBytes(
 
 VOID
 SYMCRYPT_CALL
-SymCryptXorBytes( 
+SymCryptXorBytes(
     _In_reads_( cbBytes )   PCBYTE  pbSrc1,
     _In_reads_( cbBytes )   PCBYTE  pbSrc2,
     _Out_writes_( cbBytes ) PBYTE   pbResult,
@@ -176,7 +203,7 @@ SymCryptXorBytes(
 
         d[0] = s1[0] ^ s2[0];
         d[1] = s1[1] ^ s2[1];
-    } 
+    }
     else
     {
         while( cbBytes >= 8 )
@@ -206,7 +233,7 @@ SymCryptXorBytes(
 //
 VOID
 SYMCRYPT_CALL
-SymCryptXorBytes( 
+SymCryptXorBytes(
     _In_reads_( cbBytes )   PCBYTE  pbSrc1,
     _In_reads_( cbBytes )   PCBYTE  pbSrc2,
     _Out_writes_( cbBytes ) PBYTE   pbResult,
@@ -234,7 +261,7 @@ SymCryptXorBytes(
 UINT32
 SymCryptUint32Bitsize( UINT32 value )
 //
-// Some CPUs/compilers have intriniscs for this,
+// Some CPUs/compilers have intrinsics for this,
 // but this is portable and works everywhere.
 //
 {
@@ -255,7 +282,7 @@ SymCryptUint64Bitsize( UINT64 value )
 {
     UINT32 res;
     UINT32 upper;
-    
+
     upper = (UINT32)(value >> 32);
 
     if( upper == 0 )
@@ -295,7 +322,7 @@ SymCryptUint64Bytesize( UINT64 value )
 {
     UINT32 res;
     UINT32 upper;
-    
+
     upper = (UINT32)(value >> 32);
 
     if( upper == 0 )
@@ -311,7 +338,7 @@ SymCryptUint64Bytesize( UINT64 value )
 
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptLoadLsbFirstUint32( 
+SymCryptLoadLsbFirstUint32(
     _In_reads_( cbSrc ) PCBYTE  pbSrc,
                         SIZE_T  cbSrc,
     _Out_               PUINT32 pDst )
@@ -341,7 +368,7 @@ cleanup:
 
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptLoadLsbFirstUint64( 
+SymCryptLoadLsbFirstUint64(
     _In_reads_( cbSrc ) PCBYTE  pbSrc,
                         SIZE_T  cbSrc,
     _Out_               PUINT64 pDst )
@@ -375,7 +402,7 @@ cleanup:
 
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptLoadMsbFirstUint32( 
+SymCryptLoadMsbFirstUint32(
     _In_reads_( cbSrc ) PCBYTE  pbSrc,
                         SIZE_T  cbSrc,
     _Out_               PUINT32 pDst )
@@ -406,7 +433,7 @@ cleanup:
 
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
-SymCryptLoadMsbFirstUint64( 
+SymCryptLoadMsbFirstUint64(
     _In_reads_( cbSrc ) PCBYTE  pbSrc,
                         SIZE_T  cbSrc,
     _Out_               PUINT64 pDst )

@@ -1,26 +1,17 @@
 //
 // GHASH.c
-// 
-// Implemenation of the NIST SP800-38D GHASH function which is the
+//
+// Implementation of the NIST SP800-38D GHASH function which is the
 // core authentication function for the GCM and GMAC modes.
 //
 // This implementation was done by Niels Ferguson for the RSA32.lib library in 2008,
-// and adapted to the SymCrypt library in 2009. 
-// 
+// and adapted to the SymCrypt library in 2009.
+//
 // Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
-#include "precomp.h" 
-
-#define CPU_FEATURES_FOR_PCLMULQDQ  (SYMCRYPT_CPU_FEATURE_PCLMULQDQ | SYMCRYPT_CPU_FEATURE_SSSE3 | SYMCRYPT_CPU_FEATURE_SAVEXMM_NOFAIL )
-
-//////////////////////////////////////////////////////////////////////////////
-// Constants & globals
-//
-
-#define GF128_FIELD_R_BYTE   (0xe1)
-#define UINT64_NEG(x) ((UINT64)-(INT64)(x))
-
+#include "precomp.h"
+#include "ghash_definitions.h"
 
 //////////////////////////////////////////////////////////////////////////////
 // Platform-independent code
@@ -33,7 +24,7 @@
 //
 VOID
 SYMCRYPT_CALL
-SymCryptGHashExpandKeyC( 
+SymCryptGHashExpandKeyC(
     _Out_writes_( SYMCRYPT_GF128_FIELD_SIZE )   PSYMCRYPT_GF128_ELEMENT expandedKey,
     _In_reads_( SYMCRYPT_GF128_BLOCK_SIZE )    PCBYTE                  pH )
 {
@@ -68,10 +59,10 @@ SymCryptGHashExpandKeyC(
 VOID
 SYMCRYPT_CALL
 SymCryptGHashAppendDataC(
-    _In_reads_( SYMCRYPT_GF128_FIELD_SIZE )    PCSYMCRYPT_GF128_ELEMENT    expandedKeyTable,
-    _Inout_                                     PSYMCRYPT_GF128_ELEMENT     pState,
-    _In_reads_( cbData )                       PCBYTE                      pbData,
-    _In_                                        SIZE_T                      cbData )
+    _In_reads_( SYMCRYPT_GF128_FIELD_SIZE )  PCSYMCRYPT_GF128_ELEMENT    expandedKeyTable,
+    _Inout_                                  PSYMCRYPT_GF128_ELEMENT     pState,
+    _In_reads_( cbData )                     PCBYTE                      pbData,
+                                             SIZE_T                      cbData )
 {
     UINT64 R0, R1;
     UINT64 mask;
@@ -107,14 +98,14 @@ SymCryptGHashAppendDataC(
         pbData += SYMCRYPT_GF128_BLOCK_SIZE;
         cbData -= SYMCRYPT_GF128_BLOCK_SIZE;
     }
-    
+
     SymCryptWipeKnownSize( state32, sizeof( state32 ) );
 }
 
 
 VOID
 SYMCRYPT_CALL
-SymCryptGHashResult( 
+SymCryptGHashResult(
     _In_                                        PCSYMCRYPT_GF128_ELEMENT    pState,
     _Out_writes_( SYMCRYPT_GF128_BLOCK_SIZE )   PBYTE                       pbResult )
 {
@@ -128,7 +119,7 @@ SymCryptGHashResult(
 
 VOID
 SYMCRYPT_CALL
-SymCryptGHashExpandKeyXmm( 
+SymCryptGHashExpandKeyXmm(
     _Out_writes_( SYMCRYPT_GF128_FIELD_SIZE )   PSYMCRYPT_GF128_ELEMENT expandedKey,
     _In_reads_( SYMCRYPT_GF128_BLOCK_SIZE )    PCBYTE                  pH )
 {
@@ -151,7 +142,7 @@ SymCryptGHashAppendDataXmm(
     _In_reads_( SYMCRYPT_GF128_FIELD_SIZE ) PCSYMCRYPT_GF128_ELEMENT    expandedKeyTable,
     _Inout_                                 PSYMCRYPT_GF128_ELEMENT     pState,
     _In_reads_( cbData )                    PCBYTE                      pbData,
-    _In_                                    SIZE_T                      cbData )
+                                            SIZE_T                      cbData )
 {
     __m128i R;
     __m128i cmpValue;
@@ -165,14 +156,14 @@ SymCryptGHashAppendDataXmm(
     int i;
 
     cmpValue = _mm_setzero_si128();             // cmpValue = 0
-    
+
     while( cbData >= SYMCRYPT_GF128_BLOCK_SIZE )
     {
         R = _mm_setzero_si128();
 
         //
-        // The amd64 compiler can't optimize array indeces in a loop where 
-        // you use _mm intrinics,
+        // The amd64 compiler can't optimize array indices in a loop where
+        // you use _mm intrinsics,
         // so we do all the pointer arithmetic for the compiler.
         //
         p = &expandedKeyTable[0];
@@ -183,7 +174,7 @@ SymCryptGHashAppendDataXmm(
             //
             // Set up our XMM register with 4 identical 32-bit integers so that
             // we can generate the mask from the individual bits of the 32-bit value.
-            // Note the use of tmp; if we assign directly to the fields of T the 
+            // Note the use of tmp; if we assign directly to the fields of T the
             // compiler no longer caches T in an XMM register, which is bad.
             //
             // There are XMM instructions where we can do the duplication in the XMM
@@ -196,10 +187,7 @@ SymCryptGHashAppendDataXmm(
             // little endian machines.
             //
             t = SYMCRYPT_LOAD_MSBFIRST32( &pbData[4*i] ) ^ pState->ul[3-i];
-            tmp.m128i_u32[0] = 
-            tmp.m128i_u32[1] = 
-            tmp.m128i_u32[2] = 
-            tmp.m128i_u32[3] = t;
+            tmp = _mm_set_epi32(t, t, t, t);
 
             T = tmp;
             while( p < pLimit )
@@ -207,10 +195,10 @@ SymCryptGHashAppendDataXmm(
                 //
                 // p and plimit are always at indexes that are multiples of 4 from
                 // the start of the array.
-                // We need to explain to prefast that this menas that p <= pLimit - 4
+                // We need to explain to prefast that this means that p <= pLimit - 4
                 //
                 SYMCRYPT_ASSERT( p <= pLimit - 4 );
-                
+
                 mask = _mm_cmpgt_epi32( cmpValue, T );
                 T = _mm_add_epi32( T, T );
                 mask = _mm_and_si128( mask, p[0].m128i );
@@ -230,7 +218,7 @@ SymCryptGHashAppendDataXmm(
                 T = _mm_add_epi32( T, T );
                 mask = _mm_and_si128( mask, p[3].m128i );
                 R = _mm_xor_si128( R, mask );
-                
+
                 p += 4;
             }
             pLimit += 32;
@@ -253,8 +241,19 @@ SymCryptGHashAppendDataNeon(
     _In_reads_( SYMCRYPT_GF128_FIELD_SIZE )     PCSYMCRYPT_GF128_ELEMENT    expandedKeyTable,
     _Inout_                                     PSYMCRYPT_GF128_ELEMENT     pState,
     _In_reads_( cbData )                        PCBYTE                      pbData,
-    _In_                                        SIZE_T                      cbData )
+                                                SIZE_T                      cbData )
 {
+    // Room for improvement: replace non-crypto NEON code below, based on a bit by bit lookup with
+    // pmull on 8b elements - 8x(8bx8b) -> 8x(16b) pmull is NEON instruction since Armv7
+    //
+    // When properly unrolled:
+    // 1 (64bx64b -> 128b) pmull instruction and 1 eor instruction can be replaced by
+    // 8 (8x(8bx8b) -> 8x(16b)) pmull instructions and 8 eor instructions
+    // so each 128b of data could be processed by less than 64 instructions (using karatsuba)
+    // rather than ~512 instructions (bit by bit)
+    //
+    // Not a priority, expect that AES-GCM performance will be dominated by AES on these platforms
+
     __n128 R;
     __n128 cmpValue;
     __n128 mask;
@@ -266,15 +265,13 @@ SymCryptGHashAppendDataNeon(
     int i;
 
     cmpValue = vdupq_n_u32(0);             // cmpValue = 0
-    
+
     while( cbData >= SYMCRYPT_GF128_BLOCK_SIZE )
     {
         R = cmpValue;
 
         //
-        // The amd64 compiler can't optimize array indeces in a loop where 
-        // you use _mm intrinics,
-        // so we do all the pointer arithmetic for the compiler.
+        // Do all the pointer arithmetic for the compiler.
         //
         p = &expandedKeyTable[0];
         pLimit = &expandedKeyTable[32];
@@ -284,17 +281,12 @@ SymCryptGHashAppendDataNeon(
             //
             // Set up our XMM register with 4 identical 32-bit integers so that
             // we can generate the mask from the individual bits of the 32-bit value.
-            // Note the use of tmp; if we assign directly to the fields of T the 
+            // Note the use of tmp; if we assign directly to the fields of T the
             // compiler no longer caches T in an XMM register, which is bad.
             //
-            // There are XMM instructions where we can do the duplication in the XMM
-            // registers, but they require SSE3 support, and this code only requires
-            // SSE2. As the inner loop consumes most of the time, it isn't worth
-            // using the SSE3 instructions.
-            //
             // Note that accessing the state as an array of UINT32s depends on the
-            // endianness of the CPU, but this is XMM code that only runs on
-            // little endian machines.
+            // endianness of the CPU, but Arm code is always expected to execute in
+            // little endian mode.
             //
             t = SYMCRYPT_LOAD_MSBFIRST32( &pbData[4*i] ) ^ pState->ul[3-i];
             T = vdupq_n_u32( t );
@@ -304,10 +296,10 @@ SymCryptGHashAppendDataNeon(
                 //
                 // p and plimit are always at indexes that are multiples of 4 from
                 // the start of the array.
-                // We need to explain to prefast that this menas that p <= pLimit - 4
+                // We need to explain to prefast that this means that p <= pLimit - 4
                 //
                 SYMCRYPT_ASSERT( p <= pLimit - 4 );
-                
+
                 mask = vcgtq_s32( cmpValue, T );
                 T = vaddq_u32( T, T );
                 mask = vandq_u32( mask, p[0].n128 );
@@ -327,7 +319,7 @@ SymCryptGHashAppendDataNeon(
                 T = vaddq_u32( T, T );
                 mask = vandq_u32( mask, p[3].n128 );
                 R = veorq_u32( R, mask );
-                
+
                 p += 4;
             }
             pLimit += 32;
@@ -351,14 +343,14 @@ GHASH GF(2^128) multiplication using PCLMULQDQ
 The GF(2^128) field used in GHASH is GF(2)[x]/p(x) where p(x) is the primitive polynomial
     x^128 + x^7 + x^2 + x + 1
 
-Notation: We use the standard mathematical notation '+' for the addition in the field, 
+Notation: We use the standard mathematical notation '+' for the addition in the field,
 which corresponds to a xor of the bits.
 
 Multiplication:
-Given two field elements A and B (represented as 128-bit values), 
-we first compute the polynomial product 
+Given two field elements A and B (represented as 128-bit values),
+we first compute the polynomial product
     (C,D) := A * B
-where C and D are also 128-bit values. 
+where C and D are also 128-bit values.
 
 The PCLMULQDQ instruction performs a 64 x 64 -> 128 bit carryless multiplication.
 To multiply 128-bit values we write A = (A1, A0) and B = (B1, B0) in two 64-bit halves.
@@ -374,7 +366,7 @@ This requires only one PCLMULQDQ instruction to multiply (A1 + A0) by (B1 + B0)
 as the other two products are already computed.
 Whether this is faster depends on the relative speed of shift/xor verses PCLMULQDQ.
 
-Both multiplication algorithms produce three 128-bit intermediate results (R1, Rmid, R0), 
+Both multiplication algorithms produce three 128-bit intermediate results (R1, Rmid, R0),
 with the full result defined by R1 x^128 + Rmid x^64 + R0.
 If we do Multiply-Accumulate then we can accumulate the three 128-bit intermediate results
 directly. As there are no carries, there is no overflow, and the combining of the three
@@ -385,11 +377,11 @@ Modulo reduction:
 We use << and >> to denote shifts on 128-bit values.
 The modulo reduction can now be done as follows:
 given a 256-bit value (C,D) representing C x^128 + D we compute
-    (T1,T0) := C + C*x + C * x^2 + C * x^7      
+    (T1,T0) := C + C*x + C * x^2 + C * x^7
     R := D + T0 + T1 + (T1 << 1) + (T1 << 2) + (T1 << 7)
 
-(T1,T0) is just the value C x^128 reduced one step modulo p(x).The value T1 is at most 7 bits, 
-so in the next step the reduciton, which computes the result R, is easy. The
+(T1,T0) is just the value C x^128 reduced one step modulo p(x).The value T1 is at most 7 bits,
+so in the next step the reduction, which computes the result R, is easy. The
 expression T1 + (T1 << 1) + (T1 << 2) + (T1 << 7) is just T1 * x^128 reduced modulo p(x).
 
 Let's first get rid of the polynomial arithmetic and write this completely using shifts on
@@ -401,20 +393,20 @@ R := D + T0 + T1  + (T1 << 1) + (T1 << 2) + (T1 << 7)
 
 We can optimize this by rewriting the equations
 
-T2 := T1 + C 
-    = C + (C>>127) + (C>>126) + (C>>121)     
+T2 := T1 + C
+    = C + (C>>127) + (C>>126) + (C>>121)
 R   = D + T0 + T1  + (T1 << 1) + (T1 << 2) + (T1 << 7)
     = D + C + (C << 1) + (C << 2) + (C << 7) + T1  + (T1 << 1) + (T1 << 2) + (T1 << 7)
     = D + T2 + (T2 << 1) + (T2 << 2) + (T2 << 7)
 
 Thus
-T2  = C + (C>>127) + (C>>126) + (C>>121)     
+T2  = C + (C>>127) + (C>>126) + (C>>121)
 R   = D + T2 + (T2 << 1) + (T2 << 2) + (T2 << 7)
 
 Gets the right result and uses only 6 shifts.
 
 The SSE instruction set does not implement bit-shifts of 128-bit values. Instead, we will
-use bit-shifts of the 32-bit subvalues, and byte shifts (shifts by a multiple of 8 bits) 
+use bit-shifts of the 32-bit subvalues, and byte shifts (shifts by a multiple of 8 bits)
 on the full 128-bit values.
 We use the <<<< and >>>> operators to denote shifts on 32-bit subwords.
 
@@ -434,19 +426,19 @@ u3 := (T2 << 7) = (T2 <<<< 7) + ((T2 >>>> 25) << 32)
 R = D + T2 + u1 + u2 + u3
 
 We can eliminate some common subexpressions. For any k we have
-(T2 >>>> k) = ((C + r) >>>> k) 
-where r is a 7-bit value. If k>7 then this is equal to (C >>>> k). This means that 
+(T2 >>>> k) = ((C + r) >>>> k)
+where r is a 7-bit value. If k>7 then this is equal to (C >>>> k). This means that
 the value (T2 >>>> 31) is equal to (C >>>> 31) so we don't have to compute it again.
 
 So we can rewrite our formulas as
-t4 := (C >>>> 31) 
+t4 := (C >>>> 31)
 t5 := (C >>>> 30)
-t6 := (C >>>> 25) 
+t6 := (C >>>> 25)
 ts = t4 + t5 + t6
 T2 = C + (ts >> 96)
 
-Note that ts = (C >>>> 31) + (C >>>> 30) + (C >>>> 25) 
-which is equal to (T2 >>>> 31) + (T2 >>>> 30) + (T2 >>>> 25) 
+Note that ts = (C >>>> 31) + (C >>>> 30) + (C >>>> 25)
+which is equal to (T2 >>>> 31) + (T2 >>>> 30) + (T2 >>>> 25)
 
 R = D + T2 + u1 + u2 + u3
   = D + T2 + (T2 <<<< 1) + (T2 <<<< 2) + (T2 <<<< 7) + (ts << 32)
@@ -465,8 +457,8 @@ The bits b_0, b_1, ..., b_127 represent the polynomial b_0 + b_1 * x + ... + b_1
 This means that the most significant bit in each byte is actually the least significant bit in the
 polynomial.
 
-SSE CPUs use the LSBFirst convention. This means that the bits b_0, b_1, ..., b_127 of the polynimial
-end up at positions 7, 6, 5, ..., 1, 0, 15, 14, ..., 9, 8, 23, 22, ... of our XMM register. 
+SSE CPUs use the LSBFirst convention. This means that the bits b_0, b_1, ..., b_127 of the polynomial
+end up at positions 7, 6, 5, ..., 1, 0, 15, 14, ..., 9, 8, 23, 22, ... of our XMM register.
 This is obviously not a useful representation to do arithmetic in.
 The first step is to BSWAP the value so that the bits appear in pure reverse order.
 That is at least algebraically useful.
@@ -477,7 +469,7 @@ rev(A) and rev(B) where rev() is a function that reverses the bit order. We can 
 
   rev(A) * rev(B) = rev( A*B ) >> 1
 
-where the shift operator is on the 256-bit product. 
+where the shift operator is on the 256-bit product.
 
 The modulo reduction remains the same, except that we change all the shifts to be the other direction.
 
@@ -500,158 +492,77 @@ This gives us finally the outline of our multiplication:
 
 Future work:
 It might be possible to construct a faster solution by merging the leftshift of (P1,P0)
-with the modulo reduction. 
+with the modulo reduction.
 
 */
 
-#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64    
-
-#define SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS    16
-
-//
-// We define a few macros
-//
-
-//
-// CLMUL_4 multiplies two operands into three intermediate results using 4 pclmulqdq instructions
-//
-#define CLMUL_4( opA, opB, resl, resm, resh ) \
-{ \
-    resl = _mm_clmulepi64_si128( opA, opB, 0x00 ); \
-    resm = _mm_xor_si128( _mm_clmulepi64_si128( opA, opB, 0x01 ), _mm_clmulepi64_si128( opA, opB, 0x10 ) ); \
-    resh = _mm_clmulepi64_si128( opA, opB, 0x11 ); \
-};
-
-//
-// CLMUL_3 multiplies two operands into three intermediate results using 3 pclmulqdq instructions.
-// The second operand has a pre-computed difference of the two halves.
-// This uses Karatsuba, but we delay xorring the high and low piece into the middle piece.
-//
-#define CLMUL_3( opA, opB, opBx, resl, resm, resh ) \
-{ \
-    __m128i _tmpA; \
-    resl = _mm_clmulepi64_si128( opA, opB, 0x00 ); \
-    resh = _mm_clmulepi64_si128( opA, opB, 0x11 ); \
-    _tmpA = _mm_xor_si128( opA, _mm_srli_si128( opA, 8 ) ); \
-    resm = _mm_clmulepi64_si128( _tmpA, opBx, 0x00 ); \
-};
-
-//
-// Post-process the CLMUL_3 result to be compatible with the CLMUL_4
-//
-#define CLMUL_3_POST( resl, resm, resh ) \
-    resm = _mm_xor_si128( resm, _mm_xor_si128( resl, resh ) );
-
-//
-// Multiply-accumulate using CLMUL_4
-//
-#define CLMUL_ACC_4( opA, opB, resl, resm, resh ) \
-{\
-    __m128i _tmpl, _tmpm, _tmph;\
-    CLMUL_4( opA, opB, _tmpl, _tmpm, _tmph );\
-    resl = _mm_xor_si128( resl, _tmpl ); \
-    resm = _mm_xor_si128( resm, _tmpm ); \
-    resh = _mm_xor_si128( resh, _tmph ); \
-};
-
-//
-// Multiply-accumulate using CLMUL_3
-//
-#define CLMUL_ACC_3( opA, opB, opBx, resl, resm, resh ) \
-{\
-    __m128i _tmpl, _tmpm, _tmph;\
-    CLMUL_3( opA, opB, opBx, _tmpl, _tmpm, _tmph );\
-    resl = _mm_xor_si128( resl, _tmpl ); \
-    resm = _mm_xor_si128( resm, _tmpm ); \
-    resh = _mm_xor_si128( resh, _tmph ); \
-};
-
-
-//
-// Convert the 3 intermediate results to a 256-bit result,
-// and do the modulo reduction.
-// See the large comment above on how this is done.
-//
-#define MODREDUCE( rl, rm, rh, res ) \
-{\
-    __m128i _T0, _T1, _T2, _Q0, _Q1; \
-    rl = _mm_xor_si128( rl, _mm_slli_si128( rm, 8 ) ); \
-    rh = _mm_xor_si128( rh, _mm_srli_si128( rm, 8 ) ); \
-\
-    _Q0 = _mm_slli_epi32( rl, 1 ); \
-    _Q1 = _mm_slli_epi32( rh, 1 ); \
-\
-    _T0 = _mm_srli_epi32( rl, 31 ); \
-    _T1 = _mm_srli_epi32( rh, 31 ); \
-\
-    _T2 = _mm_srli_si128( _T0, 12 ); \
-    _T0 = _mm_slli_si128( _T0, 4 ); \
-    _T1 = _mm_slli_si128( _T1, 4 ); \
-\
-    _Q0 = _mm_xor_si128( _Q0, _T0 ); \
-    _Q1 = _mm_xor_si128( _Q1, _T2 ); \
-    _Q1 = _mm_xor_si128( _Q1, _T1 ); \
-\
-    _T0 = _mm_slli_epi32( _Q0, 31 ); \
-    _T1 = _mm_slli_epi32( _Q0, 30 ); \
-    _T2 = _mm_slli_epi32( _Q0, 25 ); \
-    _T0 = _mm_xor_si128( _T0, _T1 ); \
-    _T0 = _mm_xor_si128( _T0, _T2 ); \
-\
-    _T1 = _mm_slli_si128( _T0, 12 ); \
-\
-    _T2 = _mm_xor_si128( _Q0, _T1 ); \
-\
-    res = _mm_xor_si128( _Q1, _T2 ); \
-    _T1 = _mm_srli_si128( _T0, 4 ); \
-    res = _mm_xor_si128(  res, _T1 ); \
-\
-    _T0 = _mm_srli_epi32( _T2, 1 ); \
-    _T1 = _mm_srli_epi32( _T2, 2 ); \
-    _T2 = _mm_srli_epi32( _T2, 7 ); \
-\
-    _T1 = _mm_xor_si128( _T0, _T1 ); \
-    res = _mm_xor_si128( res, _T2 ); \
-    res = _mm_xor_si128( res, _T1 ); \
-};
+#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
 
 VOID
 SYMCRYPT_CALL
-SymCryptGHashExpandKeyPclmulqdq( 
+SymCryptGHashExpandKeyPclmulqdq(
     _Out_writes_( SYMCRYPT_GF128_FIELD_SIZE )   PSYMCRYPT_GF128_ELEMENT expandedKey,
-    _In_reads_( SYMCRYPT_GF128_BLOCK_SIZE )    PCBYTE                  pH )
+    _In_reads_( SYMCRYPT_GF128_BLOCK_SIZE )     PCBYTE                  pH )
 {
     int i;
-    __m128i H;
-    __m128i t0, t1, t2;
-    __m128i Hi;
+    __m128i H, Hx, H2, H2x;
+    __m128i t0, t1, t2, t3, t4, t5;
+    __m128i Hi_even, Hix_even, Hi_odd, Hix_odd;
     __m128i BYTE_REVERSE_ORDER = _mm_set_epi8(
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 );
+    __m128i vMultiplicationConstant = _mm_set_epi32( 0, 0, 0xc2000000, 0 );
 
     //
-    // Our expanded key consists of a list of SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS 
-    // powers of H. The first entry is H, the next H^2, then H^3, ...
+    // Our expanded key consists of a list of N=SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS
+    // powers of H. The first entry is H^N, the next H^(N-1), then H^(N-2), ...
     //
-    // Each entry stores two 128-bit values. The first is H^i and the second
-    // contains the two halves of H^i xorred with each other in the lower 64 bits.
+    // For each power we store two 128-bit values. The first is H^i (Hi) and the second
+    // contains the two halves of H^i xorred with each other in the lower 64 bits (Hix).
+    //
+    // We keep all of the Hi entries together in the first half of the expanded key
+    // table, and all of the Hix entries together in the second half of the table.
+    //
+    // This ordering allow for efficient vectorization with arbitrary vector width, as
+    // many multiplication constants can be loaded into wider vectors with the correct
+    // alignment. Not maintaining different layouts for different vector lengths does
+    // leave a small amount of performance on the table, but experimentally it seems to
+    // <1% difference, and using a single layout reduces complexity significantly.
     //
     C_ASSERT( 2*SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS <= SYMCRYPT_GF128_FIELD_SIZE );
 
-    H = _mm_loadu_si128((__m128i *) pH );  
+    H = _mm_loadu_si128((__m128i *) pH );
     H = _mm_shuffle_epi8( H, BYTE_REVERSE_ORDER );
+    Hx = _mm_xor_si128( H, _mm_srli_si128( H, 8 ) );
 
-    Hi = H;
-    _mm_store_si128( &expandedKey[0].m128i, H );
-    _mm_store_si128( &expandedKey[1].m128i, _mm_xor_si128( H, _mm_srli_si128( H, 8 ) ) );
+    _mm_store_si128( &GHASH_H_POWER(expandedKey, 1), H );
+    _mm_store_si128( &GHASH_Hx_POWER(expandedKey, 1), Hx );
 
-    for( i=1; i<SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS; i++ )
+    CLMUL_X_3( H, Hx, H, Hx, t0, t1, t2 );
+    CLMUL_3_POST( t0, t1, t2 );
+    MODREDUCE( vMultiplicationConstant, t0, t1, t2, H2 );
+    H2x = _mm_xor_si128( H2, _mm_srli_si128( H2, 8 ) );
+    _mm_store_si128( &GHASH_H_POWER(expandedKey, 2), H2 );
+    _mm_store_si128( &GHASH_Hx_POWER(expandedKey, 2), H2x );
+
+    Hi_even = H2;
+    Hix_even = H2x;
+
+    for( i=2; i<SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS; i+=2 )
     {
-        CLMUL_4( H, Hi, t0, t1, t2 );
-        MODREDUCE( t0, t1, t2, Hi );
-        _mm_store_si128( &expandedKey[2*i  ].m128i, Hi );
-        _mm_store_si128( &expandedKey[2*i+1].m128i, _mm_xor_si128( Hi, _mm_srli_si128( Hi, 8 ) ) );
+        CLMUL_X_3( H, Hx, Hi_even, Hix_even, t0, t1, t2 );
+        CLMUL_3_POST( t0, t1, t2 );
+        CLMUL_X_3( H2, H2x, Hi_even, Hix_even, t3, t4, t5 );
+        CLMUL_3_POST( t3, t4, t5 );
+        MODREDUCE( vMultiplicationConstant, t0, t1, t2, Hi_odd );
+        MODREDUCE( vMultiplicationConstant, t3, t4, t5, Hi_even );
+        Hix_odd  = _mm_xor_si128( Hi_odd, _mm_srli_si128( Hi_odd, 8 ) );
+        Hix_even = _mm_xor_si128( Hi_even, _mm_srli_si128( Hi_even, 8 ) );
+
+        _mm_store_si128( &GHASH_H_POWER(expandedKey, i + 1), Hi_odd );
+        _mm_store_si128( &GHASH_H_POWER(expandedKey, i + 2), Hi_even );
+        _mm_store_si128( &GHASH_Hx_POWER(expandedKey, i + 1), Hix_odd );
+        _mm_store_si128( &GHASH_Hx_POWER(expandedKey, i + 2), Hix_even );
     }
-    
 }
 
 
@@ -662,12 +573,11 @@ SymCryptGHashAppendDataPclmulqdq(
     _In_reads_( SYMCRYPT_GF128_FIELD_SIZE ) PCSYMCRYPT_GF128_ELEMENT    expandedKeyTable,
     _Inout_                                 PSYMCRYPT_GF128_ELEMENT     pState,
     _In_reads_( cbData )                    PCBYTE                      pbData,
-    _In_                                    SIZE_T                      cbData )
+                                            SIZE_T                      cbData )
 {
     __m128i state;
     __m128i data;
     __m128i a0, a1, a2;
-    //__m128i t0, t1, t2;
     __m128i Hi, Hix;
     SIZE_T i;
     SIZE_T nBlocks = cbData / SYMCRYPT_GF128_BLOCK_SIZE;
@@ -679,16 +589,17 @@ SymCryptGHashAppendDataPclmulqdq(
 
     __m128i BYTE_REVERSE_ORDER = _mm_set_epi8(
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 );
+    __m128i vMultiplicationConstant = _mm_set_epi32( 0, 0, 0xc2000000, 0 );
 
     state = _mm_loadu_si128( (__m128i *) pState );
 
     while( nBlocks > 0 )
     {
         //
-        // We process the data in blocks of up to SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS blocks 
+        // We process the data in blocks of up to SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS blocks
         //
-        todo = min( nBlocks, SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS );
-        
+        todo = SYMCRYPT_MIN( nBlocks, SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS );
+
         //
         // The first block is xorred with the state before multiplying it with a power of H
         //
@@ -697,12 +608,10 @@ SymCryptGHashAppendDataPclmulqdq(
         pbData += SYMCRYPT_GF128_BLOCK_SIZE;
 
         state = _mm_xor_si128( state, data );
-        CLMUL_3( state, expandedKeyTable[2*(todo - 1)].m128i, 
-            expandedKeyTable[2*(todo-1) + 1].m128i, 
-            a0, a1, a2 );
+        CLMUL_3( state, GHASH_H_POWER(expandedKeyTable, todo), GHASH_Hx_POWER(expandedKeyTable, todo), a0, a1, a2 );
 
         //
-        // Then we just do an improduct 
+        // Then we just do an improduct
         //
         for( i=1; i<todo; i++ )
         {
@@ -710,13 +619,13 @@ SymCryptGHashAppendDataPclmulqdq(
             data = _mm_shuffle_epi8( data, BYTE_REVERSE_ORDER );
             pbData += SYMCRYPT_GF128_BLOCK_SIZE;
 
-            Hi = _mm_load_si128( &expandedKeyTable[2*(todo - 1 - i)].m128i );
-            Hix = _mm_load_si128( &expandedKeyTable[2*(todo - 1 - i) + 1].m128i );
+            Hi  = _mm_load_si128( &GHASH_H_POWER(expandedKeyTable, todo - i) );
+            Hix = _mm_load_si128( &GHASH_Hx_POWER(expandedKeyTable, todo - i) );
             CLMUL_ACC_3( data, Hi, Hix, a0, a1, a2 );
         }
 
         CLMUL_3_POST( a0, a1, a2 );
-        MODREDUCE( a0, a1, a2, state );
+        MODREDUCE( vMultiplicationConstant, a0, a1, a2, state );
         nBlocks -= todo;
     }
 
@@ -727,164 +636,70 @@ SymCryptGHashAppendDataPclmulqdq(
 
 #if SYMCRYPT_CPU_ARM64
 
-#define SYMCRYPT_GHASH_PMULL_HPOWERS    16
-
-#define vmullq_high_p64(src1, src2) neon_pmull2_64(src1, src2)
-
-#define vzeroq()    vdupq_n_u64(0)
-
-//
-// CLMUL_4 multiplies two operands into three intermediate results using 4 pclmulqdq instructions
-//
-#define CLMUL_4( opA, opB, resl, resm, resh ) \
-{ \
-    __n128 _tmp; \
-    resl = vmullq_p64( opA, opB ); \
-    _tmp = vextq_u8( opA, opA, 8 ); \
-    resm = veorq_u8( vmullq_p64( opB, _tmp ), vmullq_high_p64( opB, _tmp ) );\
-    resh = vmullq_high_p64( opA, opB ); \
-};
-
-//
-// CLMUL_3 multiplies two operands into three intermediate results using 3 pclmulqdq instructions.
-// The second operand has a pre-computed difference of the two halves.
-// This uses Karatsuba, but we delay xorring the high and low piece into the middle piece.
-//
-#define CLMUL_3( opA, opB, opBx, resl, resm, resh ) \
-{ \
-    __n128 _tmpA; \
-    resl = vmullq_p64( opA, opB ); \
-    resh = vmullq_high_p64( opA, opB ); \
-    _tmpA = veorq_u8( opA, vextq_u8( opA, opA, 8 ) ); \
-    resm = vmullq_p64( _tmpA, opBx ); \
-};
-
-//
-// Post-process the CLMUL_3 result to be compatible with the CLMUL_4
-//
-#define CLMUL_3_POST( resl, resm, resh ) \
-    resm = veorq_u8( resm, veorq_u8( resl, resh ) );
-
-//
-// Multiply-accumulate using CLMUL_4
-//
-#define CLMUL_ACC_4( opA, opB, resl, resm, resh ) \
-{\
-    __n128 _tmpl, _tmpm, _tmph;\
-    CLMUL_4( opA, opB, _tmpl, _tmpm, _tmph );\
-    resl = veorq_u8( resl, _tmpl ); \
-    resm = veorq_u8( resm, _tmpm ); \
-    resh = veorq_u8( resh, _tmph ); \
-};
-
-//
-// Multiply-accumulate using CLMUL_3
-//
-#define CLMUL_ACC_3( opA, opB, opBx, resl, resm, resh ) \
-{\
-    __n128 _tmpl, _tmpm, _tmph;\
-    CLMUL_3( opA, opB, opBx, _tmpl, _tmpm, _tmph );\
-    resl = veorq_u8( resl, _tmpl ); \
-    resm = veorq_u8( resm, _tmpm ); \
-    resh = veorq_u8( resh, _tmph ); \
-};
-
-
-//
-// Convert the 3 intermediate results to a 256-bit result,
-// and do the modulo reduction.
-// See the large comment above on how this is done.
-//
-#define MODREDUCE( rl, rm, rh, res ) \
-{\
-    __n128 _T0, _T1, _T2, _Q0, _Q1; \
-    rl = veorq_u8( rl, vextq_u8( vZero, rm, 8 ) ); \
-    rh = veorq_u8( rh, vextq_u8( rm, vZero, 8 ) ); \
-\
-    _Q0 = vshlq_n_u32( rl, 1 ); \
-    _Q1 = vshlq_n_u32( rh, 1 ); \
-\
-    _T0 = vshrq_n_u32( rl, 31 ); \
-    _T1 = vshrq_n_u32( rh, 31 ); \
-\
-    _T2 = vextq_u8( _T0, vZero, 12 ); \
-    _T0 = vextq_u8( vZero, _T0, 12 ); \
-    _T1 = vextq_u8( vZero, _T1, 12 ); \
-\
-    _Q0 = veorq_u8( _Q0, _T0 ); \
-    _Q1 = veorq_u8( _Q1, _T2 ); \
-    _Q1 = veorq_u8( _Q1, _T1 ); \
-\
-    _T0 = vshlq_n_u32( _Q0, 31 ); \
-    _T1 = vshlq_n_u32( _Q0, 30 ); \
-    _T2 = vshlq_n_u32( _Q0, 25 ); \
-    _T0 = veorq_u8( _T0, _T1 ); \
-    _T0 = veorq_u8( _T0, _T2 ); \
-\
-    _T1 = vextq_u8( vZero, _T0, 4); \
-\
-    _T2 = veorq_u8( _Q0, _T1 ); \
-\
-    res = veorq_u8( _Q1, _T2 ); \
-    _T1 = vextq_u8( _T0, vZero, 4 ); \
-    res = veorq_u8(  res, _T1 ); \
-\
-    _T0 = vshrq_n_u32( _T2, 1 ); \
-    _T1 = vshrq_n_u32( _T2, 2 ); \
-    _T2 = vshrq_n_u32( _T2, 7 ); \
-\
-    _T1 = veorq_u8( _T0, _T1 ); \
-    res = veorq_u8( res, _T2 ); \
-    res = veorq_u8( res, _T1 ); \
-};
-
-#define REVERSE_BYTES( _in, _out )\
-{\
-    __n128 _t;\
-    _t = vrev64q_u8( _in ); \
-    _out = vextq_u8( _t, _t, 8 ); \
-}
-
-
 VOID
 SYMCRYPT_CALL
-SymCryptGHashExpandKeyPmull( 
+SymCryptGHashExpandKeyPmull(
     _Out_writes_( SYMCRYPT_GF128_FIELD_SIZE )   PSYMCRYPT_GF128_ELEMENT expandedKey,
     _In_reads_( SYMCRYPT_GF128_BLOCK_SIZE )    PCBYTE                  pH )
 {
     int i;
-    __n128 H;
-    __n128 t0, t1, t2;
-    __n128 Hi;
-    const __n128 vZero = vzeroq();
-
+    __n128 H, Hx, H2, H2x;
+    __n128 t0, t1, t2, t3, t4, t5;
+    __n128 Hi_even, Hix_even, Hi_odd, Hix_odd;
+    const __n64 vMultiplicationConstant = SYMCRYPT_SET_N64_U64(0xc200000000000000);
     //
-    // Our expanded key consists of a list of SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS 
-    // powers of H. The first entry is H, the next H^2, then H^3, ...
+    // Our expanded key consists of a list of N=SYMCRYPT_GHASH_PMULL_HPOWERS
+    // powers of H. The first entry is H^N, the next H^(N-1), then H^(N-2), ...
     //
-    // Each entry stores two 128-bit values. The first is H^i and the second
-    // contains the two halves of H^i xorred with each other in the lower 64 bits.
+    // For each power we store two 128-bit values. The first is H^i (Hi) and the second
+    // contains the two halves of H^i xorred with each other in the lower 64 bits (Hix).
+    //
+    // We keep all of the Hi entries together in the first half of the expanded key
+    // table, and all of the Hix entries together in the second half of the table.
+    //
+    // This ordering allow for efficient vectorization with arbitrary vector width, as
+    // many multiplication constants can be loaded into wider vectors with the correct
+    // alignment. Not maintaining different layouts for different vector lengths does
+    // leave a small amount of performance on the table, but experimentally it seems to
+    // <1% difference, and using a single layout reduces complexity significantly.
     //
     C_ASSERT( 2*SYMCRYPT_GHASH_PMULL_HPOWERS <= SYMCRYPT_GF128_FIELD_SIZE );
 
     H = *(__n128 *) pH;
-    REVERSE_BYTES( H, H );
+    Hx = vrev64q_u8( H );
+    H = vextq_u8( Hx, Hx, 8 );
+    Hx = veorq_u8( H, Hx );
 
-    Hi = H;
-    expandedKey[0].n128 = H;
-    expandedKey[1].n128 = veorq_u8( H, vextq_u8( H, H, 8 ) );
+    GHASH_H_POWER(expandedKey, 1) = H;
+    GHASH_Hx_POWER(expandedKey, 1) = Hx;
 
-    for( i=1; i<SYMCRYPT_GHASH_PMULL_HPOWERS; i++ )
+    CLMUL_X_3( H, Hx, H, Hx, t0, t1, t2 );
+    CLMUL_3_POST( t0, t1, t2 );
+    MODREDUCE( vMultiplicationConstant, t0, t1, t2, H2 );
+    H2x = veorq_u8( H2, vextq_u8( H2, H2, 8 ) );
+    GHASH_H_POWER(expandedKey, 2) = H2;
+    GHASH_Hx_POWER(expandedKey, 2) = H2x;
+
+    Hi_even = H2;
+    Hix_even = H2x;
+
+    for( i=2; i<SYMCRYPT_GHASH_PMULL_HPOWERS; i+=2 )
     {
-        CLMUL_4( H, Hi, t0, t1, t2 );
-        MODREDUCE( t0, t1, t2, Hi );
-        expandedKey[2*i  ].n128 = Hi;
-        expandedKey[2*i+1].n128 =  veorq_u8( Hi, vextq_u8( Hi, Hi, 8 ) );
+        CLMUL_X_3( H, Hx, Hi_even, Hix_even, t0, t1, t2 );
+        CLMUL_3_POST( t0, t1, t2 );
+        CLMUL_X_3( H2, H2x, Hi_even, Hix_even, t3, t4, t5 );
+        CLMUL_3_POST( t3, t4, t5 );
+        MODREDUCE( vMultiplicationConstant, t0, t1, t2, Hi_odd );
+        MODREDUCE( vMultiplicationConstant, t3, t4, t5, Hi_even );
+        Hix_odd = veorq_u8( Hi_odd, vextq_u8( Hi_odd, Hi_odd, 8 ) );
+        Hix_even = veorq_u8( Hi_even, vextq_u8( Hi_even, Hi_even, 8 ) );
+
+        GHASH_H_POWER(expandedKey, i + 1) = Hi_odd;
+        GHASH_H_POWER(expandedKey, i + 2) = Hi_even;
+        GHASH_Hx_POWER(expandedKey, i + 1) = Hix_odd;
+        GHASH_Hx_POWER(expandedKey, i + 2) = Hix_even;
     }
-    
 }
-
-
 
 VOID
 SYMCRYPT_CALL
@@ -892,31 +707,26 @@ SymCryptGHashAppendDataPmull(
     _In_reads_( SYMCRYPT_GF128_FIELD_SIZE ) PCSYMCRYPT_GF128_ELEMENT    expandedKeyTable,
     _Inout_                                 PSYMCRYPT_GF128_ELEMENT     pState,
     _In_reads_( cbData )                    PCBYTE                      pbData,
-    _In_                                    SIZE_T                      cbData )
+                                            SIZE_T                      cbData )
 {
     __n128 state;
-    __n128 data;
+    __n128 data, datax;
     __n128 a0, a1, a2;
-    //__m128i t0, t1, t2;
     __n128 Hi, Hix;
-    const __n128 vZero = vzeroq();
+    const __n64 vMultiplicationConstant = SYMCRYPT_SET_N64_U64(0xc200000000000000);
     SIZE_T i;
     SIZE_T nBlocks = cbData / SYMCRYPT_GF128_BLOCK_SIZE;
     SIZE_T todo;
-
-    //
-    // To do a BSWAP we need an __m128i value with the bytes
-    //
 
     state = *(__n128 *) pState;
 
     while( nBlocks > 0 )
     {
         //
-        // We process the data in blocks of up to SYMCRYPT_GHASH_PCLMULQDQ_HPOWERS blocks 
+        // We process the data in blocks of up to SYMCRYPT_GHASH_PMULL_HPOWERS blocks
         //
-        todo = min( nBlocks, SYMCRYPT_GHASH_PMULL_HPOWERS );
-        
+        todo = SYMCRYPT_MIN( nBlocks, SYMCRYPT_GHASH_PMULL_HPOWERS );
+
         //
         // The first block is xorred with the state before multiplying it with a power of H
         //
@@ -925,26 +735,26 @@ SymCryptGHashAppendDataPmull(
         pbData += SYMCRYPT_GF128_BLOCK_SIZE;
 
         state = veorq_u8( state, data );
-        CLMUL_3( state, expandedKeyTable[2*(todo - 1)].n128, 
-            expandedKeyTable[2*(todo-1) + 1].n128, 
-            a0, a1, a2 );
+        CLMUL_3( state, GHASH_H_POWER(expandedKeyTable, todo), GHASH_Hx_POWER(expandedKeyTable, todo), a0, a1, a2 );
 
         //
-        // Then we just do an improduct 
+        // Then we just do an improduct
         //
         for( i=1; i<todo; i++ )
         {
-            data = *(__n128 *)pbData;
-            REVERSE_BYTES( data, data );
+            // we can avoid an EXT here by precomputing datax for CLMUL_ACCX_3
+            datax = vrev64q_u8( *(__n128 *)pbData );
+            data = vextq_u8( datax, datax, 8 );
+            datax = veorq_u8( data, datax );
             pbData += SYMCRYPT_GF128_BLOCK_SIZE;
 
-            Hi  = expandedKeyTable[2*(todo - 1 - i)    ].n128;
-            Hix = expandedKeyTable[2*(todo - 1 - i) + 1].n128;
-            CLMUL_ACC_3( data, Hi, Hix, a0, a1, a2 );
+            Hi  = GHASH_H_POWER(expandedKeyTable, todo - i);
+            Hix = GHASH_Hx_POWER(expandedKeyTable, todo - i);
+            CLMUL_ACCX_3( data, datax, Hi, Hix, a0, a1, a2 );
         }
 
         CLMUL_3_POST( a0, a1, a2 );
-        MODREDUCE( a0, a1, a2, state );
+        MODREDUCE( vMultiplicationConstant, a0, a1, a2, state );
         nBlocks -= todo;
     }
 
@@ -966,7 +776,7 @@ SymCryptGHashExpandKey(
     _Out_                                       PSYMCRYPT_GHASH_EXPANDED_KEY    expandedKey,
     _In_reads_( SYMCRYPT_GF128_BLOCK_SIZE )     PCBYTE                          pH )
 {
-#if  SYMCRYPT_CPU_X86 
+#if  SYMCRYPT_CPU_X86
     PSYMCRYPT_GF128_ELEMENT pExpandedKeyTable;
     SYMCRYPT_EXTENDED_SAVE_DATA  SaveData;
 
@@ -977,7 +787,7 @@ SymCryptGHashExpandKey(
 
     pExpandedKeyTable = (PSYMCRYPT_GF128_ELEMENT)&expandedKey->tableSpace[expandedKey->tableOffset];
 
-    if( SYMCRYPT_CPU_FEATURES_PRESENT( CPU_FEATURES_FOR_PCLMULQDQ ) )
+    if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURES_FOR_PCLMULQDQ_CODE ) )
     {
         //
         // We can only use the PCLMULQDQ data representation if the SaveXmm never fails.
@@ -998,11 +808,11 @@ SymCryptGHashExpandKey(
         SymCryptGHashExpandKeyC( pExpandedKeyTable, pH );
     }
 
-#elif SYMCRYPT_CPU_AMD64 
+#elif SYMCRYPT_CPU_AMD64
     PSYMCRYPT_GF128_ELEMENT pExpandedKeyTable;
     pExpandedKeyTable = &expandedKey->table[0];
 
-    if( SYMCRYPT_CPU_FEATURES_PRESENT( CPU_FEATURES_FOR_PCLMULQDQ ) )
+    if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURES_FOR_PCLMULQDQ_CODE ) )
     {
         SymCryptGHashExpandKeyPclmulqdq( pExpandedKeyTable, pH );
     } else if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURE_SSE2 ) )
@@ -1031,18 +841,18 @@ SymCryptGHashExpandKey(
 VOID
 SYMCRYPT_CALL
 SymCryptGHashAppendData(
-    _In_                    PCSYMCRYPT_GHASH_EXPANDED_KEY   expandedKey,
-    _Inout_                 PSYMCRYPT_GF128_ELEMENT         pState,
-    _In_reads_( cbData )    PCBYTE                          pbData,
-    _In_                    SIZE_T                          cbData )
+    _In_                              PCSYMCRYPT_GHASH_EXPANDED_KEY   expandedKey,
+    _Inout_                           PSYMCRYPT_GF128_ELEMENT         pState,
+    _In_reads_( cbData )              PCBYTE                          pbData,
+                                      SIZE_T                          cbData )
 {
-#if SYMCRYPT_CPU_X86 
+#if SYMCRYPT_CPU_X86
     PCSYMCRYPT_GF128_ELEMENT pExpandedKeyTable;
     SYMCRYPT_EXTENDED_SAVE_DATA  SaveData;
 
     pExpandedKeyTable = (PSYMCRYPT_GF128_ELEMENT)&expandedKey->tableSpace[expandedKey->tableOffset];
 
-    if( SYMCRYPT_CPU_FEATURES_PRESENT( CPU_FEATURES_FOR_PCLMULQDQ ) )
+    if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURES_FOR_PCLMULQDQ_CODE ) )
     {
         if( SymCryptSaveXmm( &SaveData ) != SYMCRYPT_NO_ERROR )
         {
@@ -1062,7 +872,7 @@ SymCryptGHashAppendData(
     PCSYMCRYPT_GF128_ELEMENT pExpandedKeyTable;
 
     pExpandedKeyTable = &expandedKey->table[0];
-    if( SYMCRYPT_CPU_FEATURES_PRESENT( CPU_FEATURES_FOR_PCLMULQDQ ) )
+    if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURES_FOR_PCLMULQDQ_CODE ) )
     {
         SymCryptGHashAppendDataPclmulqdq( pExpandedKeyTable, pState, pbData, cbData );
     } else if( SYMCRYPT_CPU_FEATURES_PRESENT( SYMCRYPT_CPU_FEATURE_SSE2 ) )

@@ -18,13 +18,7 @@ INCLUDES= \
     ..\..\inc; \
     ..\lib; \
     $(OBJECT_ROOT)\SymCrypt\Publics\$(O); \
-    $(DS_INC_PATH);                 \
-    $(DS_INC_PATH)\crypto; \
-    $(ONECOREDS_INC_PATH)\crypto; \
-    $(ONECOREDS_PRIVATE_INC_PATH_L)\crypto; \
     $(ONECOREDS_INTERNAL_INC_PATH_L)\crypto; \
-    $(MINWIN_PRIV_SDK_INC_PATH)\crypto; \
-#   $(ONECORE_PRIVATE_PATH)\ds\inc\crypto; \
     $(DDK_INC_PATH); \
 
 SOURCES= \
@@ -33,11 +27,11 @@ SOURCES= \
         
 TARGETLIBS= \
 #    $(MINCORE_SDK_LIB_PATH)\mincore.lib \
-    $(MINWIN_SDK_LIB_PATH)\ntdll.lib \
+    $(MINWIN_EXTERNAL_SDK_LIB_PATH_L)\ntdll.lib \
     $(OBJECT_ROOT)\SymCrypt\Publics\$(O)\rsa32.lib \
     $(OBJECT_ROOT)\SymCrypt\Publics\$(O)\msbignum.lib \
-    $(SDK_LIB_PATH)\powrprof.lib \
-    $(SDK_LIB_PATH)\bcrypt.lib \
+    $(ONECORE_EXTERNAL_SDK_LIB_PATH)\powrprof.lib \
+    $(ONECORE_EXTERNAL_SDK_LIB_PATH)\bcrypt.lib \
     $(OBJECT_ROOT)\symcrypt\lib\$(O)\symcrypt.lib \
     $(OBJECT_ROOT)\symcrypt\unittest\lib\$(O)\symcryptunittest_lib.lib \
 	
@@ -45,6 +39,7 @@ TARGETLIBS= \
 UNICODE = 1
 
 USE_MSVCRT=1
+USE_UNICRT=1
 
 BUFFER_OVERFLOW_CHECKS=1
 
@@ -57,7 +52,7 @@ USE_RTTI = 1
 #NT_SIGNCODE = 1
 
 USE_STL = 1
-STL_VER = 70
+STL_VER = STL_VER_CURRENT
 USE_NATIVE_EH = 1
 
 MUI = 0

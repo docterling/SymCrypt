@@ -13,7 +13,6 @@
 
 #include "precomp.h"
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptHkdfExpandKey(
@@ -26,13 +25,51 @@ SymCryptHkdfExpandKey(
 {
     SYMCRYPT_ERROR scError = SYMCRYPT_NO_ERROR;
 
-    SYMCRYPT_MAC_STATE state;
-    SYMCRYPT_MAC_EXPANDED_KEY key;
-
     SYMCRYPT_ALIGN BYTE rbPrk[SYMCRYPT_MAC_MAX_RESULT_SIZE] = { 0 };
 
     SYMCRYPT_ASSERT( macAlgorithm->expandedKeySize <= sizeof( pExpandedKey->macKey ) );
 
+    scError = SymCryptHkdfExtractPrk( macAlgorithm, pbIkm, cbIkm, pbSalt, cbSalt, rbPrk, macAlgorithm->resultSize );
+    if (scError != SYMCRYPT_NO_ERROR)
+    {
+        goto cleanup;
+    }
+
+    scError = SymCryptHkdfPrkExpandKey( pExpandedKey, macAlgorithm, rbPrk, macAlgorithm->resultSize );
+    if (scError != SYMCRYPT_NO_ERROR)
+    {
+        goto cleanup;
+    }
+
+cleanup:
+    SymCryptWipeKnownSize(&rbPrk[0], sizeof(rbPrk));
+
+    return scError;
+}
+
+SYMCRYPT_ERROR
+SYMCRYPT_CALL
+SymCryptHkdfExtractPrk(
+    _In_                    PCSYMCRYPT_MAC                  macAlgorithm,
+    _In_reads_(cbIkm)       PCBYTE                          pbIkm,
+                            SIZE_T                          cbIkm,
+    _In_reads_opt_(cbSalt)  PCBYTE                          pbSalt,
+                            SIZE_T                          cbSalt,
+    _Out_writes_(cbPrk)     PBYTE                           pbPrk,
+                            SIZE_T                          cbPrk )
+{
+    SYMCRYPT_ERROR scError = SYMCRYPT_NO_ERROR;
+
+    SYMCRYPT_MAC_STATE state;
+    SYMCRYPT_MAC_EXPANDED_KEY key;
+
+    // Ensure that pbPrk is the correct size
+    if (cbPrk != macAlgorithm->resultSize)
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
+    
     // Calculation of PRK = HMAC-Hash(salt, IKM)
     scError = macAlgorithm->expandKeyFunc( &key, pbSalt, cbSalt );
     if (scError != SYMCRYPT_NO_ERROR)
@@ -42,22 +79,14 @@ SymCryptHkdfExpandKey(
 
     macAlgorithm->initFunc( &state, &key );
     macAlgorithm->appendFunc( &state, pbIkm, cbIkm );
-    macAlgorithm->resultFunc( &state, rbPrk );
-
-    scError = SymCryptHkdfPrkExpandKey( pExpandedKey, macAlgorithm, rbPrk, macAlgorithm->resultSize );
-    if (scError != SYMCRYPT_NO_ERROR)
-    {
-        goto cleanup;
-    }
+    macAlgorithm->resultFunc( &state, pbPrk );
 
 cleanup:
     SymCryptWipeKnownSize(&key, sizeof(key));
-    SymCryptWipeKnownSize(&rbPrk[0], sizeof(rbPrk));
 
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptHkdfPrkExpandKey(
@@ -72,7 +101,6 @@ SymCryptHkdfPrkExpandKey(
     return macAlgorithm->expandKeyFunc( &pExpandedKey->macKey, pbPrk, cbPrk );
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptHkdfDerive(
@@ -111,7 +139,7 @@ SymCryptHkdfDerive(
     pMacAlgorithm->resultFunc( &state, rbPartialResult );
 
     // Store the result in the output buffer
-    memcpy(pbCurr, rbPartialResult, min(cbResult, cbMacResultSize));
+    memcpy(pbCurr, rbPartialResult, SYMCRYPT_MIN(cbResult, cbMacResultSize));
     if (cbResult <= cbMacResultSize)
     {
         goto cleanup;
@@ -132,7 +160,7 @@ SymCryptHkdfDerive(
         pMacAlgorithm->resultFunc( &state, rbPartialResult );
 
         // Store the result in the output buffer
-        memcpy(pbCurr, rbPartialResult, min(cbResult, cbMacResultSize));
+        memcpy(pbCurr, rbPartialResult, SYMCRYPT_MIN(cbResult, cbMacResultSize));
         if (cbResult <= cbMacResultSize)
         {
             goto cleanup;
@@ -153,7 +181,6 @@ cleanup:
 //
 // The full HKDF
 //
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptHkdf(

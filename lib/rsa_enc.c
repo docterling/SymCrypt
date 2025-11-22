@@ -16,7 +16,7 @@ SymCryptRsaCoreEncScratchSpace( _In_ PCSYMCRYPT_RSAKEY pkRsakey)
 {
 	// Bounded by 2^19 + 2^24 ~ 2^24 (see symcrypt_internal.h)
     return SymCryptSizeofModElementFromModulus( pkRsakey->pmModulus ) +
-           max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
+           SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
                 SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( pkRsakey->nDigitsOfModulus ) );
 }
 
@@ -25,6 +25,7 @@ SymCryptRsaCoreVerifyInput(
     _In_                        PCSYMCRYPT_RSAKEY           pkRsakey,
     _In_reads_bytes_( cbSrc )   PCBYTE                      pbSrc,
                                 SIZE_T                      cbSrc,
+                                SYMCRYPT_NUMBER_FORMAT      numFormat,
                                 SIZE_T                      cbDst,
     _Out_writes_bytes_( cbScratch )
                                 PBYTE                       pbScratch,
@@ -37,22 +38,23 @@ SymCryptRsaCoreVerifyInput(
     UNREFERENCED_PARAMETER( cbScratch );
 
     if ( cbSrc > SymCryptRsakeySizeofModulus(pkRsakey) ||
-         cbDst > SymCryptRsakeySizeofModulus(pkRsakey) )
+         cbDst < SymCryptRsakeySizeofModulus(pkRsakey) )
     {
         scError = SYMCRYPT_INVALID_ARGUMENT;
         goto cleanup;
     }
 
-    // We need check if pbSrc is less than modulus
-	// dcl - if cbSrc != SymCryptRsakeySizeofModulus(pkRsakey)
-	// then you do nothing, and return SYMCRYPT_NO_ERROR
-	// this seems like a bad design. Or at the least, add a comment explaining why this is by design.
+    // It is an error of value(pbSrc) >= modulus
+    // We already know that cbSrc <= sizeof( modulus ) so we only have to run this check
+    // if cbSrc == sizeof( modulus )
+    // No side channel issues here: we are only comparing the input to the public part of the key.
     if (cbSrc == SymCryptRsakeySizeofModulus(pkRsakey))
     {
         cbTmpInteger = SymCryptSizeofIntFromDigits( pkRsakey->nDigitsOfModulus );
+        SYMCRYPT_ASSERT( cbScratch >= cbTmpInteger );
         piTmpInteger = SymCryptIntCreate( pbScratch, cbTmpInteger, pkRsakey->nDigitsOfModulus );
 
-        scError = SymCryptIntSetValue( pbSrc, cbSrc, SYMCRYPT_NUMBER_FORMAT_MSB_FIRST, piTmpInteger );
+        scError = SymCryptIntSetValue( pbSrc, cbSrc, numFormat, piTmpInteger );
         if (scError != SYMCRYPT_NO_ERROR)
         {
            goto cleanup;
@@ -70,7 +72,6 @@ cleanup:
 }
 
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaCoreEnc(
@@ -93,12 +94,12 @@ SymCryptRsaCoreEnc(
     PBYTE   pbFnScratch = NULL;
     SIZE_T  cbFnScratch = 0;
 
-    BYTE    abExpIntBuffer[ SYMCRYPT_SIZEOF_INT_FROM_BITS( 32 ) + SYMCRYPT_ASYM_ALIGN_VALUE];
+    BYTE    abExpIntBuffer[ SYMCRYPT_SIZEOF_INT_FROM_BITS( 64 ) + SYMCRYPT_ASYM_ALIGN_VALUE];
     PSYMCRYPT_INT piExp = NULL;
 
     UNREFERENCED_PARAMETER( flags );
 
-    scError = SymCryptRsaCoreVerifyInput(pkRsakey, pbSrc, cbSrc, cbDst, pbScratch, cbScratch);
+    scError = SymCryptRsaCoreVerifyInput(pkRsakey, pbSrc, cbSrc, numFormat, cbDst, pbScratch, cbScratch);
     if (scError != SYMCRYPT_NO_ERROR)
     {
         goto cleanup;
@@ -108,7 +109,7 @@ SymCryptRsaCoreEnc(
 
     UNREFERENCED_PARAMETER( cbScratch );
     SYMCRYPT_ASSERT( cbScratch >= cbModElement +
-                                  max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
+                                  SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
                                        SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( pkRsakey->nDigitsOfModulus ) ));
 
     pbFnScratch = pbScratch;
@@ -129,14 +130,18 @@ SymCryptRsaCoreEnc(
     // Convert the public exponent to an Int
     // Future: we can optimize the ModExp to take an UINT64
     piExp = SymCryptIntCreate( SYMCRYPT_ASYM_ALIGN_UP(abExpIntBuffer), sizeof( abExpIntBuffer) - SYMCRYPT_ASYM_ALIGN_VALUE, 1 );
-    SYMCRYPT_HARD_ASSERT( piExp != NULL );
+    if( piExp == NULL )
+    {
+        scError = SYMCRYPT_HARDWARE_FAILURE;
+        goto cleanup;
+    }
     SymCryptIntSetValueUint64( pkRsakey->au64PubExp[0], piExp );
 
     // Modular Exponentiation
     SymCryptModExp(
             pkRsakey->pmModulus,
             peRes,
-            piExp,     
+            piExp,
             SymCryptIntBitsizeOfValue( piExp ),   // This is a public value
             SYMCRYPT_FLAG_DATA_PUBLIC,
             peRes,
@@ -165,25 +170,26 @@ SYMCRYPT_CALL
 SymCryptRsaCoreDecCrtScratchSpace( _In_ PCSYMCRYPT_RSAKEY pkRsakey)
 {
     UINT32 cbModElementTotal = 0;
+    UINT32 nPrimes = pkRsakey->nPrimes;
 
-    if ( pkRsakey->nPrimes > SYMCRYPT_RSAKEY_MAX_NUMOF_PRIMES )
-    {
-        SymCryptFatal( 'rsad' );
-    }
-    
+    SYMCRYPT_ASSERT( nPrimes <= SYMCRYPT_RSAKEY_MAX_NUMOF_PRIMES );
+    // clamp nPrimes to SYMCRYPT_RSAKEY_MAX_NUMOF_PRIMES for scratch memory allocation purposes
+    // SymCryptRsaCoreDecCrt will fail with invalid argument if there are too many primes later
+    nPrimes = SYMCRYPT_MIN( nPrimes, SYMCRYPT_RSAKEY_MAX_NUMOF_PRIMES );
+
     for (UINT32 i=0; i<pkRsakey->nPrimes; i++)
     {
         cbModElementTotal += SYMCRYPT_SIZEOF_MODELEMENT_FROM_BITS( pkRsakey->nBitsOfPrimes[i]);
     }
 
-	// Bounded by 5*2^19 + 2^24 ~ 2^24 (see symcrypt_internal.h)
+    // Bounded by 5*2^19 + 2^24 ~ 2^24 (see symcrypt_internal.h)
     return 3*SymCryptSizeofIntFromDigits( pkRsakey->nDigitsOfModulus ) +
            SymCryptSizeofIntFromDigits( pkRsakey->nMaxDigitsOfPrimes ) +
            cbModElementTotal +
            SYMCRYPT_SIZEOF_MODELEMENT_FROM_BITS( pkRsakey->nBitsOfModulus) +
-           max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
-           max( SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( pkRsakey->nDigitsOfModulus ),
-           max( SYMCRYPT_SCRATCH_BYTES_FOR_INT_DIVMOD( pkRsakey->nDigitsOfModulus, pkRsakey->nMaxDigitsOfPrimes ),
+           SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
+           SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( pkRsakey->nDigitsOfModulus ),
+           SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_INT_DIVMOD( pkRsakey->nDigitsOfModulus, pkRsakey->nMaxDigitsOfPrimes ),
                 SYMCRYPT_SCRATCH_BYTES_FOR_CRT_SOLUTION( pkRsakey->nMaxDigitsOfPrimes ) )));
 }
 
@@ -193,11 +199,10 @@ SymCryptRsaCoreDecScratchSpace( _In_ PCSYMCRYPT_RSAKEY pkRsakey)
 {
 	// Bounded by 2^19 + 2^24 ~ 2^24 (see symcrypt_internal.h)
     return SymCryptSizeofModElementFromModulus( pkRsakey->pmModulus ) +
-           max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
+           SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
                 SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( pkRsakey->nDigitsOfModulus ) );
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaCoreDecCrt(
@@ -242,7 +247,7 @@ SymCryptRsaCoreDecCrt(
         goto cleanup;
     }
 
-    scError = SymCryptRsaCoreVerifyInput(pkRsakey, pbSrc, cbSrc, cbDst, pbScratch, cbScratch);
+    scError = SymCryptRsaCoreVerifyInput(pkRsakey, pbSrc, cbSrc, numFormat, cbDst, pbScratch, cbScratch);
     if (scError != SYMCRYPT_NO_ERROR)
     {
         goto cleanup;
@@ -273,11 +278,11 @@ SymCryptRsaCoreDecCrt(
     //      - nPrimes is at most SYMCRYPT_RSAKEY_MAX_NUMOF_PRIMES = 2
     // Thus the following calculation does not overflow cbScratch.
     //
-    SYMCRYPT_ASSERT( cbScratch >= 
+    SYMCRYPT_ASSERT( cbScratch >=
                 3*cbInt + cbTmp + cbModElementTotal + cbModElementVerify +
-                max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
-                max( SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( pkRsakey->nDigitsOfModulus ),
-                max( SYMCRYPT_SCRATCH_BYTES_FOR_INT_DIVMOD( pkRsakey->nDigitsOfModulus, pkRsakey->nMaxDigitsOfPrimes ),
+                SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
+                SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( pkRsakey->nDigitsOfModulus ),
+                SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_INT_DIVMOD( pkRsakey->nDigitsOfModulus, pkRsakey->nMaxDigitsOfPrimes ),
                      SYMCRYPT_SCRATCH_BYTES_FOR_CRT_SOLUTION( pkRsakey->nMaxDigitsOfPrimes ) ))) );
 
     pbFnScratch = pbScratch;
@@ -392,8 +397,8 @@ SymCryptRsaCoreDecCrt(
     SymCryptModExp(
             pkRsakey->pmModulus,
             peVerify,
-            piTmp,     
-            SymCryptIntBitsizeOfValue( piTmp ),   
+            piTmp,
+            SymCryptIntBitsizeOfValue( piTmp ),
             SYMCRYPT_FLAG_DATA_PUBLIC,          // Exponent is public
             peVerify,
             pbFnScratch,
@@ -419,7 +424,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaCoreDec(
@@ -445,7 +449,7 @@ SymCryptRsaCoreDec(
     UNREFERENCED_PARAMETER( flags );
 
     // Make sure that the key has a private key
-    if ((cbSrc>SymCryptRsakeySizeofModulus(pkRsakey)) || 
+    if ((cbSrc>SymCryptRsakeySizeofModulus(pkRsakey)) ||
         (!pkRsakey->hasPrivateKey) )
     {
         scError = SYMCRYPT_INVALID_ARGUMENT;
@@ -456,7 +460,7 @@ SymCryptRsaCoreDec(
 
     UNREFERENCED_PARAMETER( cbScratch );
     SYMCRYPT_ASSERT( cbScratch >= cbModElement +
-                     max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
+                     SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( pkRsakey->nDigitsOfModulus ),
                           SYMCRYPT_SCRATCH_BYTES_FOR_MODEXP( pkRsakey->nDigitsOfModulus ) ) );
 
     pbFnScratch = pbScratch;
@@ -501,7 +505,6 @@ cleanup:
 //
 // Encryption / decryption functions
 //
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaRawEncrypt(
@@ -517,6 +520,13 @@ SymCryptRsaRawEncrypt(
 
     PBYTE   pbScratch = NULL;
     UINT32  cbScratch = 0;
+
+    // Make sure that the key may be used in Encrypt/Decrypt
+    if ( (pkRsakey->fAlgorithmInfo & SYMCRYPT_FLAG_RSAKEY_ENCRYPT) == 0 )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
 
     cbScratch = SymCryptRsaCoreEncScratchSpace( pkRsakey );
 
@@ -545,7 +555,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaRawDecrypt(
@@ -561,6 +570,13 @@ SymCryptRsaRawDecrypt(
 
     PBYTE   pbScratch = NULL;
     UINT32  cbScratch = 0;
+
+    // Make sure that the key may be used in Encrypt/Decrypt
+    if ( (pkRsakey->fAlgorithmInfo & SYMCRYPT_FLAG_RSAKEY_ENCRYPT) == 0 )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
 
     // Make sure that the key has a private key
     if (!pkRsakey->hasPrivateKey)
@@ -608,7 +624,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaPkcs1Encrypt(
@@ -633,6 +648,13 @@ SymCryptRsaPkcs1Encrypt(
 
     UNREFERENCED_PARAMETER( flags );
 
+    // Make sure that the key may be used in Encrypt/Decrypt
+    if ( (pkRsakey->fAlgorithmInfo & SYMCRYPT_FLAG_RSAKEY_ENCRYPT) == 0 )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
+
     *pcbDst = cbTmp;
 
     // Check if only *pcbDst is needed
@@ -654,7 +676,6 @@ SymCryptRsaPkcs1Encrypt(
     scError = SymCryptRsaPkcs1ApplyEncryptionPadding(
                     pbSrc,
                     cbSrc,
-                    flags,
                     pbTmp,
                     cbTmp );
     if (scError != SYMCRYPT_NO_ERROR)
@@ -696,7 +717,9 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
+// Ensure SymCryptRoundUpPow2Sizet below will not fail
+C_ASSERT((UINT32) ((SYMCRYPT_RSAKEY_MAX_BITSIZE_MODULUS + 7) / 8) <= ((SIZE_T_MAX / 2) + 1));
+
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaPkcs1Decrypt(
@@ -715,7 +738,15 @@ SymCryptRsaPkcs1Decrypt(
     SIZE_T  cbScratch = 0;
 
     PBYTE   pbTmp = NULL;
-    SIZE_T  cbTmp = SymCryptRsakeySizeofModulus(pkRsakey);
+    SIZE_T  cbModulus = SymCryptRsakeySizeofModulus(pkRsakey);
+    SIZE_T  cbTmp = SymCryptRoundUpPow2Sizet( cbModulus );      // tmp buffer needs to be a power of 2
+
+    // Make sure that the key may be used in Encrypt/Decrypt
+    if ( (pkRsakey->fAlgorithmInfo & SYMCRYPT_FLAG_RSAKEY_ENCRYPT) == 0 )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
 
     // Make sure that the key has a private key
     if (!pkRsakey->hasPrivateKey)
@@ -756,7 +787,7 @@ SymCryptRsaPkcs1Decrypt(
                 SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
                 flags,
                 pbTmp,
-                cbTmp,
+                cbModulus,
                 pbScratch,
                 cbScratch - cbTmp );
 #else
@@ -767,7 +798,7 @@ SymCryptRsaPkcs1Decrypt(
                 SYMCRYPT_NUMBER_FORMAT_MSB_FIRST,
                 flags,
                 pbTmp,
-                cbTmp,
+                cbModulus,
                 pbScratch,
                 cbScratch - cbTmp );
 #endif
@@ -778,17 +809,14 @@ SymCryptRsaPkcs1Decrypt(
 
     scError = SymCryptRsaPkcs1RemoveEncryptionPadding(
                 pbTmp,
+                cbModulus,
                 cbTmp,
-                flags,
                 pbDst,
                 cbDst,
                 pcbDst );
-    if (scError != SYMCRYPT_NO_ERROR)
-    {
-        goto cleanup;
-    }
-
-    scError = SYMCRYPT_NO_ERROR;
+    // The error that is returned from the encryption padding is confidential data
+    // due to Bleichenbacher-style attacks.
+    // Make sure we don't create a side-channel leak for it.
 
 cleanup:
     if (pbScratch!=NULL)
@@ -800,7 +828,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaOaepEncrypt(
@@ -826,6 +853,13 @@ SymCryptRsaOaepEncrypt(
 
     UNREFERENCED_PARAMETER( flags );
 
+    // Make sure that the key may be used in Encrypt/Decrypt
+    if ( (pkRsakey->fAlgorithmInfo & SYMCRYPT_FLAG_RSAKEY_ENCRYPT) == 0 )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
+
     *pcbDst = cbTmp;
 
     // Check if only *pcbDst is needed
@@ -837,7 +871,7 @@ SymCryptRsaOaepEncrypt(
 
     // The SYMCRYPT_SCRATCH_BYTES_FOR_RSA_OAEP macro does not
     // overflow cbScratch since cbTmp < 2^17.
-    cbScratch = cbTmp + max( SYMCRYPT_SCRATCH_BYTES_FOR_RSA_OAEP( hashAlgorithm, cbTmp ), SymCryptRsaCoreEncScratchSpace( pkRsakey ) );
+    cbScratch = cbTmp + SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_RSA_OAEP( hashAlgorithm, cbTmp ), SymCryptRsaCoreEncScratchSpace( pkRsakey ) );
     pbScratch = (PBYTE)SymCryptCallbackAlloc( cbScratch );
     if (pbScratch == NULL)
     {
@@ -855,7 +889,6 @@ SymCryptRsaOaepEncrypt(
                     cbLabel,
                     NULL,               // Seed
                     0,                  // cbSeed
-                    flags,
                     pbTmp,
                     cbTmp,
                     pbScratch,
@@ -899,7 +932,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaOaepDecrypt(
@@ -916,6 +948,7 @@ SymCryptRsaOaepDecrypt(
     _Out_                       SIZE_T                      *pcbDst )
 {
     SYMCRYPT_ERROR  scError = SYMCRYPT_NO_ERROR;
+    SIZE_T  cbDstResult = 0;        // We always return a value into *pcbDst
 
     PBYTE   pbScratch = NULL;
     SIZE_T  cbScratch = 0;
@@ -924,6 +957,13 @@ SymCryptRsaOaepDecrypt(
     SIZE_T  cbTmp = SymCryptRsakeySizeofModulus(pkRsakey);
 
     UNREFERENCED_PARAMETER( flags );
+
+    // Make sure that the key may be used in Encrypt/Decrypt
+    if ( (pkRsakey->fAlgorithmInfo & SYMCRYPT_FLAG_RSAKEY_ENCRYPT) == 0 )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
 
     if (cbSrc > cbTmp)
     {
@@ -941,9 +981,9 @@ SymCryptRsaOaepDecrypt(
     // The SYMCRYPT_SCRATCH_BYTES_FOR_RSA_OAEP macro does not
     // overflow cbScratch since cbTmp < 2^17.
 #if (SYMCRYPT_CRT_DECRYPTION)
-    cbScratch = cbTmp + max( SYMCRYPT_SCRATCH_BYTES_FOR_RSA_OAEP( hashAlgorithm, cbSrc ), SymCryptRsaCoreDecCrtScratchSpace( pkRsakey ) );
+    cbScratch = cbTmp + SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_RSA_OAEP( hashAlgorithm, cbSrc ), SymCryptRsaCoreDecCrtScratchSpace( pkRsakey ) );
 #else
-    cbScratch = cbTmp + max( SYMCRYPT_SCRATCH_BYTES_FOR_RSA_OAEP( hashAlgorithm, cbSrc ), SymCryptRsaCoreDecScratchSpace( pkRsakey ) );
+    cbScratch = cbTmp + SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_RSA_OAEP( hashAlgorithm, cbSrc ), SymCryptRsaCoreDecScratchSpace( pkRsakey ) );
 #endif
 
     pbScratch = (PBYTE)SymCryptCallbackAlloc( cbScratch );
@@ -1000,7 +1040,7 @@ SymCryptRsaOaepDecrypt(
                     flags,
                     pbDst,
                     cbDst,
-                    pcbDst,
+                    &cbDstResult,
                     pbScratch,
                     cbScratch - cbTmp );
     if (scError != SYMCRYPT_NO_ERROR)
@@ -1017,6 +1057,8 @@ cleanup:
         SymCryptCallbackFree(pbScratch);
     }
 
+    *pcbDst = cbDstResult;
+
     return scError;
 }
 
@@ -1024,7 +1066,6 @@ cleanup:
 // Signing / Verification functions
 //
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaPkcs1Sign(
@@ -1054,6 +1095,13 @@ SymCryptRsaPkcs1Sign(
 
     pbOID = pHashOIDs ? pHashOIDs->pbOID : NULL;
     cbOID = pHashOIDs ? pHashOIDs->cbOID : 0;
+
+    // Make sure that the key may be used in Sign/Verify
+    if ( (pkRsakey->fAlgorithmInfo & SYMCRYPT_FLAG_RSAKEY_SIGN) == 0 )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
 
     // Make sure that the key has a private key
     if (!pkRsakey->hasPrivateKey)
@@ -1146,7 +1194,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaPkcs1Verify(
@@ -1156,7 +1203,7 @@ SymCryptRsaPkcs1Verify(
     _In_reads_bytes_( cbSignature )     PCBYTE                      pbSignature,
                                         SIZE_T                      cbSignature,
                                         SYMCRYPT_NUMBER_FORMAT      nfSignature,
-    _In_                                PCSYMCRYPT_OID              pHashOIDs,
+    _In_reads_opt_( nOIDCount )         PCSYMCRYPT_OID              pHashOIDs,
     _In_                                SIZE_T                      nOIDCount,
                                         UINT32                      flags )
 {
@@ -1167,6 +1214,13 @@ SymCryptRsaPkcs1Verify(
 
     PBYTE   pbTmp = NULL;
     SIZE_T  cbTmp = SymCryptRsakeySizeofModulus(pkRsakey);
+
+    // Make sure that the key may be used in Sign/Verify
+    if ( (pkRsakey->fAlgorithmInfo & SYMCRYPT_FLAG_RSAKEY_SIGN) == 0 )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
 
     if (cbSignature > cbTmp)
     {
@@ -1183,8 +1237,8 @@ SymCryptRsaPkcs1Verify(
 
     // The SYMCRYPT_SCRATCH_BYTES_FOR_RSA_PKCS1 macro does not
     // overflow cbScratch since cbTmp < 2^17.
-    cbScratch = cbTmp + 
-                max( SymCryptRsaCoreEncScratchSpace( pkRsakey ),
+    cbScratch = cbTmp +
+                SYMCRYPT_MAX( SymCryptRsaCoreEncScratchSpace( pkRsakey ),
                      SYMCRYPT_SCRATCH_BYTES_FOR_RSA_PKCS1( cbTmp ) );
 
     pbScratch = (PBYTE)SymCryptCallbackAlloc( cbScratch );
@@ -1238,7 +1292,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaPssSign(
@@ -1261,7 +1314,15 @@ SymCryptRsaPssSign(
     PBYTE   pbTmp = NULL;
     SIZE_T  cbTmp = SymCryptRsakeySizeofModulus(pkRsakey);
 
-    if (cbHashValue > cbTmp)
+    // Make sure that the key may be used in Sign/Verify
+    if ( (pkRsakey->fAlgorithmInfo & SYMCRYPT_FLAG_RSAKEY_SIGN) == 0 )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
+
+    if ( (cbHashValue > cbTmp) ||
+         (cbSalt > cbTmp) )
     {
         scError = SYMCRYPT_INVALID_ARGUMENT;
         goto cleanup;
@@ -1286,12 +1347,12 @@ SymCryptRsaPssSign(
     // The SYMCRYPT_SCRATCH_BYTES_FOR_RSA_PSS macro does not
     // overflow cbScratch since cbTmp < 2^17.
 #if (SYMCRYPT_CRT_DECRYPTION)
-    cbScratch = cbTmp + 
-                max( SymCryptRsaCoreDecCrtScratchSpace( pkRsakey ),
+    cbScratch = cbTmp +
+                SYMCRYPT_MAX( SymCryptRsaCoreDecCrtScratchSpace( pkRsakey ),
                      SYMCRYPT_SCRATCH_BYTES_FOR_RSA_PSS( hashAlgorithm, cbHashValue, cbTmp ) );
 #else
-    cbScratch = cbTmp + 
-                max( SymCryptRsaCoreDecScratchSpace( pkRsakey ),
+    cbScratch = cbTmp +
+                SYMCRYPT_MAX( SymCryptRsaCoreDecScratchSpace( pkRsakey ),
                      SYMCRYPT_SCRATCH_BYTES_FOR_RSA_PSS( hashAlgorithm, cbHashValue, cbTmp ) );
 #endif
 
@@ -1368,7 +1429,6 @@ cleanup:
     return scError;
 }
 
-_Success_(return == SYMCRYPT_NO_ERROR)
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptRsaPssVerify(
@@ -1390,13 +1450,16 @@ SymCryptRsaPssVerify(
     PBYTE   pbTmp = NULL;
     SIZE_T  cbTmp = SymCryptRsakeySizeofModulus(pkRsakey);
 
-    if (cbHashValue > cbTmp)
+    // Make sure that the key may be used in Sign/Verify
+    if ( (pkRsakey->fAlgorithmInfo & SYMCRYPT_FLAG_RSAKEY_SIGN) == 0 )
     {
         scError = SYMCRYPT_INVALID_ARGUMENT;
         goto cleanup;
     }
 
-    if (cbSignature > cbTmp)
+    if ( (cbHashValue > cbTmp) ||
+         (cbSalt > cbTmp) ||
+         (cbSignature > cbTmp) )
     {
         scError = SYMCRYPT_INVALID_ARGUMENT;
         goto cleanup;
@@ -1411,8 +1474,8 @@ SymCryptRsaPssVerify(
 
     // The SYMCRYPT_SCRATCH_BYTES_FOR_RSA_PSS macro does not
     // overflow cbScratch since cbTmp < 2^17.
-    cbScratch = cbTmp + 
-                max( SymCryptRsaCoreEncScratchSpace( pkRsakey ),
+    cbScratch = cbTmp +
+                SYMCRYPT_MAX( SymCryptRsaCoreEncScratchSpace( pkRsakey ),
                      SYMCRYPT_SCRATCH_BYTES_FOR_RSA_PSS( hashAlgorithm, cbHashValue, cbTmp ) );
 
     pbScratch = (PBYTE)SymCryptCallbackAlloc( cbScratch );

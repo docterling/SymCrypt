@@ -10,12 +10,12 @@
 SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptEcDhSecretAgreement(
-    _In_    PCSYMCRYPT_ECKEY        pkPrivate,
-    _In_    PCSYMCRYPT_ECKEY        pkPublic,
-            SYMCRYPT_NUMBER_FORMAT  format,
-            UINT32                  flags,
-    _Out_   PBYTE                   pbAgreedSecret,
-            SIZE_T                  cbAgreedSecret )
+    _In_                            PCSYMCRYPT_ECKEY        pkPrivate,
+    _In_                            PCSYMCRYPT_ECKEY        pkPublic,
+                                    SYMCRYPT_NUMBER_FORMAT  format,
+                                    UINT32                  flags,
+    _Out_writes_( cbAgreedSecret )  PBYTE                   pbAgreedSecret,
+                                    SIZE_T                  cbAgreedSecret )
 {
     SYMCRYPT_ERROR scError = SYMCRYPT_NO_ERROR;
 
@@ -32,8 +32,18 @@ SymCryptEcDhSecretAgreement(
     UINT32              cbQ = 0;
     UINT32              cbX = 0;
 
-    // Make sure we only specify the correct flags
-    if (flags != 0)
+    // Make sure that the keys may be used in ECDH
+    if ( ((pkPrivate->fAlgorithmInfo & SYMCRYPT_FLAG_ECKEY_ECDH) == 0) ||
+         ((pkPublic->fAlgorithmInfo & SYMCRYPT_FLAG_ECKEY_ECDH) == 0) )
+    {
+        scError = SYMCRYPT_INVALID_ARGUMENT;
+        goto cleanup;
+    }
+
+    // Make sure we only specify the correct flags and that
+    // there is a private key
+    if ( (flags != 0) ||
+         (!pkPrivate->hasPrivateKey) )
     {
         scError = SYMCRYPT_INVALID_ARGUMENT;
         goto cleanup;
@@ -61,8 +71,8 @@ SymCryptEcDhSecretAgreement(
         goto cleanup;
     }
 
-    cbScratchInternal = max( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS(pCurve),
-                        max( SYMCRYPT_SCRATCH_BYTES_FOR_SCALAR_ECURVE_OPERATIONS( pCurve ),
+    cbScratchInternal = SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_ECURVE_OPERATIONS(pCurve),
+                        SYMCRYPT_MAX( SYMCRYPT_SCRATCH_BYTES_FOR_SCALAR_ECURVE_OPERATIONS( pCurve ),
                              SYMCRYPT_SCRATCH_BYTES_FOR_GETSET_VALUE_ECURVE_OPERATIONS( pCurve ) ));
 
     //
@@ -90,6 +100,8 @@ SymCryptEcDhSecretAgreement(
     SYMCRYPT_ASSERT( poQ != NULL);
 
     // Make sure that the public key is not the zero point
+    // No need to check that the point is on the curve; that check is done when the
+    // public key is created.
     if (SymCryptEcpointIsZero(pCurve, pkPublic->poPublicKey, pbScratch, cbScratchInternal))
     {
         scError = SYMCRYPT_INVALID_ARGUMENT;
@@ -98,7 +110,7 @@ SymCryptEcDhSecretAgreement(
 
     // Calculate the secret
     // Always do low order clearing by multiplying by the cofactor.
-    //  Note:   the internal format of piPrivaKey is "DivH", so we
+    //  Note:   the internal format of piPrivateKey is "DivH", so we
     //          get the correct result.
     scError = SymCryptEcpointScalarMul(
                 pCurve,

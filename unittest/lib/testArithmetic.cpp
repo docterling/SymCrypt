@@ -1,9 +1,8 @@
 //
-// Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
+// Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
 #include "precomp.h"
-#include "msbignum_implementations.h"
 
 #if 0
 #define TEST_CHECK_WOOP( p )    {(p)->checkWoop();}
@@ -196,7 +195,7 @@ const BYTE PrimeCurve25519[] = {
 };
 
 const BYTE Prime1024Rfc5114[] = {
-    0xB1, 0x0B, 0x8F, 0x96, 0xA0, 0x80, 0xE0, 0x1D, 0xDE, 0x92, 0xDE, 0x5E, 0xAE, 0x5D, 0x54, 0xEC, 
+    0xB1, 0x0B, 0x8F, 0x96, 0xA0, 0x80, 0xE0, 0x1D, 0xDE, 0x92, 0xDE, 0x5E, 0xAE, 0x5D, 0x54, 0xEC,
     0x52, 0xC9, 0x9F, 0xBC, 0xFB, 0x06, 0xA3, 0xC6, 0x9A, 0x6A, 0x9D, 0xCA, 0x52, 0xD2, 0x3B, 0x61,
     0x60, 0x73, 0xE2, 0x86, 0x75, 0xA2, 0x3D, 0x18, 0x98, 0x38, 0xEF, 0x1E, 0x2E, 0xE6, 0x52, 0xC0,
     0x13, 0xEC, 0xB4, 0xAE, 0xA9, 0x06, 0x11, 0x23, 0x24, 0x97, 0x5C, 0x3C, 0xD4, 0x9B, 0x83, 0xBF,
@@ -226,20 +225,20 @@ const BYTE Prime2048Rfc5114[] = {
 };
 
 const BYTE Prime3072Rfc3526[] = {
-0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xC9, 0x0F, 0xDA, 0xA2, 0x21, 0x68, 0xC2, 0x34, 
-0xC4, 0xC6, 0x62, 0x8B, 0x80, 0xDC, 0x1C, 0xD1, 0x29, 0x02, 0x4E, 0x08, 0x8A, 0x67, 0xCC, 0x74, 
+0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xC9, 0x0F, 0xDA, 0xA2, 0x21, 0x68, 0xC2, 0x34,
+0xC4, 0xC6, 0x62, 0x8B, 0x80, 0xDC, 0x1C, 0xD1, 0x29, 0x02, 0x4E, 0x08, 0x8A, 0x67, 0xCC, 0x74,
 0x02, 0x0B, 0xBE, 0xA6, 0x3B, 0x13, 0x9B, 0x22, 0x51, 0x4A, 0x08, 0x79, 0x8E, 0x34, 0x04, 0xDD,
 0xEF, 0x95, 0x19, 0xB3, 0xCD, 0x3A, 0x43, 0x1B, 0x30, 0x2B, 0x0A, 0x6D, 0xF2, 0x5F, 0x14, 0x37,
-0x4F, 0xE1, 0x35, 0x6D, 0x6D, 0x51, 0xC2, 0x45, 0xE4, 0x85, 0xB5, 0x76, 0x62, 0x5E, 0x7E, 0xC6, 
+0x4F, 0xE1, 0x35, 0x6D, 0x6D, 0x51, 0xC2, 0x45, 0xE4, 0x85, 0xB5, 0x76, 0x62, 0x5E, 0x7E, 0xC6,
 0xF4, 0x4C, 0x42, 0xE9, 0xA6, 0x37, 0xED, 0x6B, 0x0B, 0xFF, 0x5C, 0xB6, 0xF4, 0x06, 0xB7, 0xED,
 0xEE, 0x38, 0x6B, 0xFB, 0x5A, 0x89, 0x9F, 0xA5, 0xAE, 0x9F, 0x24, 0x11, 0x7C, 0x4B, 0x1F, 0xE6,
-0x49, 0x28, 0x66, 0x51, 0xEC, 0xE4, 0x5B, 0x3D, 0xC2, 0x00, 0x7C, 0xB8, 0xA1, 0x63, 0xBF, 0x05, 
+0x49, 0x28, 0x66, 0x51, 0xEC, 0xE4, 0x5B, 0x3D, 0xC2, 0x00, 0x7C, 0xB8, 0xA1, 0x63, 0xBF, 0x05,
 0x98, 0xDA, 0x48, 0x36, 0x1C, 0x55, 0xD3, 0x9A, 0x69, 0x16, 0x3F, 0xA8, 0xFD, 0x24, 0xCF, 0x5F,
 0x83, 0x65, 0x5D, 0x23, 0xDC, 0xA3, 0xAD, 0x96, 0x1C, 0x62, 0xF3, 0x56, 0x20, 0x85, 0x52, 0xBB,
-0x9E, 0xD5, 0x29, 0x07, 0x70, 0x96, 0x96, 0x6D, 0x67, 0x0C, 0x35, 0x4E, 0x4A, 0xBC, 0x98, 0x04, 
+0x9E, 0xD5, 0x29, 0x07, 0x70, 0x96, 0x96, 0x6D, 0x67, 0x0C, 0x35, 0x4E, 0x4A, 0xBC, 0x98, 0x04,
 0xF1, 0x74, 0x6C, 0x08, 0xCA, 0x18, 0x21, 0x7C, 0x32, 0x90, 0x5E, 0x46, 0x2E, 0x36, 0xCE, 0x3B,
 0xE3, 0x9E, 0x77, 0x2C, 0x18, 0x0E, 0x86, 0x03, 0x9B, 0x27, 0x83, 0xA2, 0xEC, 0x07, 0xA2, 0x8F,
-0xB5, 0xC5, 0x5D, 0xF0, 0x6F, 0x4C, 0x52, 0xC9, 0xDE, 0x2B, 0xCB, 0xF6, 0x95, 0x58, 0x17, 0x18, 
+0xB5, 0xC5, 0x5D, 0xF0, 0x6F, 0x4C, 0x52, 0xC9, 0xDE, 0x2B, 0xCB, 0xF6, 0x95, 0x58, 0x17, 0x18,
 0x39, 0x95, 0x49, 0x7C, 0xEA, 0x95, 0x6A, 0xE5, 0x15, 0xD2, 0x26, 0x18, 0x98, 0xFA, 0x05, 0x10,
 0x15, 0x72, 0x8E, 0x5A, 0x8A, 0xAA, 0xC4, 0x2D, 0xAD, 0x33, 0x17, 0x0D, 0x04, 0x50, 0x7A, 0x33,
 0xA8, 0x55, 0x21, 0xAB, 0xDF, 0x1C, 0xBA, 0x64, 0xEC, 0xFB, 0x85, 0x04, 0x58, 0xDB, 0xEF, 0x0A,
@@ -290,7 +289,7 @@ const TEST_PRIMES g_testPrimes[]=
     {PERF_KEY_PUB_PM,   ADD_NUMBER( PrimeNumsP512 )},
 };
 
-const g_nTestPrimes = ARRAY_SIZE( g_testPrimes );
+const UINT32 g_nTestPrimes = ARRAY_SIZE( g_testPrimes );
 
 BOOL isPrimePossible( UINT32 nD )
 {
@@ -323,7 +322,7 @@ const BYTE CompositeLargePrimeProduct1[] = {
 };
 
 const BYTE CompositeLargePrimeProduct2[] = {
-// 982451579 * 982451581 
+// 982451579 * 982451581
     0x0D, 0x65, 0x1E, 0x63, 0x50, 0xA6, 0x14, 0x0F,
 };
 
@@ -349,7 +348,7 @@ const TEST_COMPOSITES g_testComposites[]=
     {ADD_NUMBER( CompositeLargePrimeProduct3 )},
 };
 
-const g_nTestComposites = ARRAY_SIZE( g_testComposites );
+const UINT32 g_nTestComposites = ARRAY_SIZE( g_testComposites );
 
 BOOL isCompositePossible( UINT32 nD )
 {
@@ -369,7 +368,7 @@ getPerfTestModulus( UINT32 exKeySize )
         keyFlags = PERF_KEY_PUB_ODD;
     }
 
-    for( int i=0; i< ARRAY_SIZE( g_testPrimes ); i++ )
+    for( SIZE_T i=0; i< ARRAY_SIZE( g_testPrimes ); i++ )
     {
         if( g_testPrimes[i].perfCategory == keyFlags && g_testPrimes[i].nBytes == keyBytes )
         {
@@ -384,12 +383,12 @@ class ArithInt {
 public:
     ArithInt( SIZE_T nDigits );
     virtual ~ArithInt();
-    
-private:    
-    ArithInt( const &ArithInt );
-    VOID operator =( const & ArithInt );
 
-    
+private:
+    ArithInt( ArithInt const & );
+    VOID operator =(  ArithInt const & );
+
+
 public:
     VOID checkWoop();
     UINT32 computeWoop();
@@ -408,12 +407,12 @@ class ArithDivisor {
 public:
     ArithDivisor( SIZE_T nDigits, UINT32 nFail = 0 );
     virtual ~ArithDivisor();
-    
-private:    
-    ArithDivisor( const &ArithDivisor );
-    VOID operator =( const & ArithDivisor );
 
-    
+private:
+    ArithDivisor( ArithDivisor const & );
+    VOID operator =(  ArithDivisor const & );
+
+
 public:
     PSYMCRYPT_DIVISOR   m_pScDivisor;
     UINT32              m_woop;
@@ -433,9 +432,9 @@ public:
 
     VOID checkValue();          // checks the invariant that the modelement == int
 
-private:    
-    ArithModElement( const &ArithModElement );
-    VOID operator =( const & ArithModElement );
+private:
+    ArithModElement( ArithModElement const & );
+    VOID operator =(  ArithModElement const & );
 
 public:
     ArithModulus *          m_pModulus;
@@ -456,9 +455,9 @@ public:
     ArithModulus( SIZE_T nDigits, UINT32 nFail = 0 );
     virtual ~ArithModulus();
 
-private:    
-    ArithModulus( const &ArithModulus );
-    VOID operator =( const & ArithModulus );
+private:
+    ArithModulus( ArithModulus const & );
+    VOID operator =(  ArithModulus const & );
 
 public:
     PSYMCRYPT_MODULUS   m_pScModulus;
@@ -603,7 +602,7 @@ ArithInt::setRandom()
         // First we construct the input buffer.
         // Most of the time we use one that will fit, sometimes we make it too big.
         // To generate corner cases, the numbers we generate are random, low-Hamming weight,
-        // somtimes inverted (for high Hamming weight)
+        // sometimes inverted (for high Hamming weight)
         //
         rand = g_rng.byte();
 
@@ -631,7 +630,7 @@ ArithInt::setRandom()
                 {
                     SIZE_T bit = g_rng.sizet( 8 * nBytes );
                     buf[ bit / 8] |= 1 << (bit % 8);
-                } 
+                }
             }
         }
 
@@ -647,7 +646,7 @@ ArithInt::setRandom()
         //
         // Predict whether the number will fit. Note that nBytes == 0 is valid.
         //
-        i = 0;  
+        i = 0;
         b = 0;
         while( i < nBytes )
         {
@@ -671,7 +670,7 @@ ArithInt::setRandom()
         if( (rand & 4) == 0 )
         {
             format = SYMCRYPT_NUMBER_FORMAT_LSB_FIRST;
-            i = 0; 
+            i = 0;
             j = nBytes == 0 ? 0 : nBytes - 1;
             while( i < j )
             {
@@ -707,7 +706,7 @@ ArithInt::computeWoop()
 {
     BYTE buf[MAX_INT_BYTES];
     SYMCRYPT_ERROR scError;
-    
+
     scError = SymCryptIntGetValue( m_pScInt, buf, sizeof( buf ), SYMCRYPT_NUMBER_FORMAT_LSB_FIRST );
     CHECK( scError == SYMCRYPT_NO_ERROR, "?" );
 
@@ -802,7 +801,7 @@ ArithInt *
 randomArithInt( SIZE_T nD, UINT32 nFail = 0 )
 //
 // Returns a random ArithInt. nFails is a parameter that the caller can pass to indicate how often
-// the result was unsatisfactorilly according to the caller's criteria. If nFails gets big enough,
+// the result was unsatisfactorily according to the caller's criteria. If nFails gets big enough,
 // this function will start returning fresh random Ints which should satisfy the criteria eventually.
 //
 {
@@ -1033,7 +1032,7 @@ testIntGetValueLsbits()
     SYMCRYPT_ERROR          scError;
     UINT32                  v;
     UINT64                  v64;
-    
+
     ArithInt *pSrc = randomArithInt( nD );
 
     v = SymCryptIntGetValueLsbits32( pSrc->m_pScInt );
@@ -1091,7 +1090,7 @@ testIntAddMixedSize()
 
     rand = g_rng.byte();
 
-    nDdst = max( nD1, nD2 );
+    nDdst = SYMCRYPT_MAX( nD1, nD2 );
     if( (rand & 1) == 0 )
     {
         nDdst += g_rng.sizet( g_digitLimit - nDdst );
@@ -1158,7 +1157,7 @@ testIntSubMixedSize()
 
     rand = g_rng.byte();
 
-    nDdst = max( nD1, nD2 );
+    nDdst = SYMCRYPT_MAX( nD1, nD2 );
     if( (rand & 1) == 0 )
     {
         nDdst += g_rng.sizet( g_digitLimit - nDdst );
@@ -1420,7 +1419,7 @@ testIsEqualUint32()
     CHECK( scError == SYMCRYPT_NO_ERROR, "?" );
 
     UINT32 v = SYMCRYPT_LOAD_LSBFIRST32( buf );
-    
+
     BYTE b = 0;
     for( UINT32 i = 4; i < nBytes; i++ )
     {
@@ -1447,7 +1446,7 @@ testIsEqual()
     UINT32          expected;
     UINT32          mask;
 
-    SIZE_T          nBytes = max( nBytes1, nBytes2 );
+    SIZE_T          nBytes = SYMCRYPT_MAX( nBytes1, nBytes2 );
 
     ArithInt    *pSrc1 = randomArithInt( nD1 );
     ArithInt    *pSrc2 = randomArithInt( nD2 );
@@ -1458,7 +1457,7 @@ testIsEqual()
     scError = SymCryptIntGetValue( pSrc2->m_pScInt, buf2, nBytes, SYMCRYPT_NUMBER_FORMAT_LSB_FIRST );
     CHECK( scError == SYMCRYPT_NO_ERROR, "?" );
 
-    expected = memcmp( buf1, buf2, nBytes ) == 0 ? (UINT32)-1 : 0; 
+    expected = memcmp( buf1, buf2, nBytes ) == 0 ? (UINT32)-1 : 0;
 
     mask = SymCryptIntIsEqual( pSrc1->m_pScInt, pSrc2->m_pScInt );
 
@@ -1478,7 +1477,7 @@ testIsLessThan()
     UINT32          expected;
     UINT32          mask;
 
-    SIZE_T          nBytes = max( nBytes1, nBytes2 );
+    SIZE_T          nBytes = SYMCRYPT_MAX( nBytes1, nBytes2 );
 
     ArithInt    *pSrc1 = randomArithInt( nD1 );
     ArithInt    *pSrc2 = randomArithInt( nD2 );
@@ -1571,7 +1570,7 @@ testIntMulUint32()
 
     t = ((UINT64)pSrc->m_woop * v) + g_woopMod;
     t -= ((UINT64)r * g_carryWoop[nD] ) % g_woopMod;
-    
+
     pDst->m_woop = (UINT32)(t % g_woopMod);
 
     TEST_CHECK_WOOP( pDst );
@@ -1647,15 +1646,15 @@ testIntPrimalityTest()
     PSYMCRYPT_INT   piSrc = NULL;
     UINT32          cbSrc = 0;
 
+    const SIZE_T    cbBuf = SYMCRYPT_SIZEOF_INT_FROM_BITS( 32 );
+    BYTE            rawbuf[ cbBuf ];
+    PBYTE           pbBuf = SYMCRYPT_ASYM_ALIGN_UP( rawbuf );
+    PBYTE           pbScratch = g_scratch;
+    SIZE_T          cbScratch = sizeof( g_scratch );
+
     PCBYTE          pCurr = NULL;
     UINT32          nBytes = 0;
     UINT32          index = 0;
-
-    BYTE            buf[ MAX_INT_BYTES ] = { 0 };
-    digit_t         bignumInt[ BYTES_TO_DIGITS( MAX_INT_BYTES ) ] = { 0 };
-    bigctx_t        bignumCtx = { 0 };
-    BOOL            bignumSuccess = FALSE;
-    BOOL            bignumResult = FALSE;
 
     UINT32          primActual = 0;
     UINT32          primResult = 0;
@@ -1667,9 +1666,9 @@ testIntPrimalityTest()
     //   that the test outputs "prime".
     // - With probability 12.5% pick a known composite and verify
     //   that the test outputs "composite".
-    // - With probability 75% compare the result of the
-    //   SymCrypt primality test with the bignum primality
-    //   test.
+    // - With prob 12.5%, pick a small integer to test
+    // - Otherwise compare the result of the
+    //   SymCrypt primality test with the reference primality test.
     //
 
     rand = g_rng.byte() & 0x07;
@@ -1734,11 +1733,32 @@ testIntPrimalityTest()
         {
             flags = SYMCRYPT_FLAG_DATA_PUBLIC;
         }
+        //iprint( "[%s %d]", primActual ? "prime" : "composite", nD );
     }
-    else
+    else if( rand == 3 )
     {
-        // Bignum comparison
+        // Pick a random 32-bit prime; lots of strange corner-cases happen more often
+        // in small primes.
+        nD = 1;
+        piSrc = SymCryptIntCreate( pbBuf, cbBuf, SymCryptDigitsFromBits( 32 ) );
+        CHECK( piSrc != NULL, "?" );
+        do {
+            index = g_rng.uint32();
+            index |= 1;
+        } while( index < 5 );
+        SymCryptIntSetValueUint32( index, piSrc );
+        primActual = RefIsPrime( piSrc, pbScratch, cbScratch ) ? 0xffffffff : 0;
+        flags = g_rng.uint32() & SYMCRYPT_FLAG_DATA_PUBLIC;
 
+        // Current SymCrypt can only do non-public values if they are 3 mod 4
+        if( (index & 2) == 0 )
+        {
+            flags |= SYMCRYPT_FLAG_DATA_PUBLIC;
+        }
+
+        //iprint( "[%d]", index );
+    } else
+    {
         // Pick number of digits
         nD = (UINT32) g_rng.sizet( 1, g_digitLimit );
 
@@ -1758,28 +1778,11 @@ testIntPrimalityTest()
                   (!SymCryptIntGetBit(pSrc->m_pScInt, 0)) ||
                   (!flags && !SymCryptIntGetBit(pSrc->m_pScInt, 1)) );
 
-        if (SymCryptIntBitsizeOfValue(pSrc->m_pScInt) > 32)
-        {
-            // Get the bytes
-            nBytes = pSrc->m_nDigits*g_bytesPerDigit;
-            scError = SymCryptIntGetValue(pSrc->m_pScInt, buf, nBytes, SYMCRYPT_NUMBER_FORMAT_MSB_FIRST);
-            CHECK(scError == SYMCRYPT_NO_ERROR, "?");
-
-            // Convert it to bignum integer
-            bignumSuccess = big_endian_bytes_to_digits(buf, bignumInt, pSrc->m_nDigits*g_bitsPerDigit, &bignumCtx);
-            CHECK(bignumSuccess, "?");
-
-            // Check for primality in bignum
-            bignumSuccess = test_primality(bignumInt, BYTES_TO_DIGITS(nBytes), &bignumResult, &bignumCtx);
-            CHECK(bignumSuccess, "?");
-
-            primActual = (bignumResult ? 0xffffffff : 0);
-        }
-
         // Set the value
         piSrc = pSrc->m_pScInt;
 
-        //iprint( "Bignum 0x%x vs SymCrypt 0x%x\n", primActual, primResult );
+        primActual = RefIsPrime( piSrc, pbScratch, cbScratch ) ? 0xffffffff : 0;
+        //iprint( "[rnd]");
     }
 
     // Check for primality
@@ -1791,7 +1794,7 @@ testIntPrimalityTest()
                         g_scratch + cbSrc,
                         SYMCRYPT_SCRATCH_BYTES_FOR_INT_IS_PRIME( nD ) );
 
-    if ((rand < 2) || (SymCryptIntBitsizeOfValue(piSrc)>32))
+    if ((rand < 2) || (SymCryptIntBitsizeOfValue(piSrc)>2))
     {
         CHECK4(primResult == primActual, "Primality test produced wrong result\n  Result : 0x%x\n  Desired: 0x%x", primResult, primActual);
     }
@@ -2078,9 +2081,9 @@ testIntGcdEx()
         piSrc2 = SymCryptIntFromDivisor( pSrc2->m_pScDivisor );
     } while ( (SymCryptIntGetValueLsbits32(piSrc2) & 0x01) == 0);
 
-    ndGcd = min(nD1,nD2);
-    ndLarge = 2*max(nD1,nD2);       // Big enough for LCM and the products InvSrcXModSrcY * SrcX
-    ndRemainder = max(nD1,nD2);     // Big enough for remainders modulo Src1 and Src2
+    ndGcd = SYMCRYPT_MIN(nD1,nD2);
+    ndLarge = 2*SYMCRYPT_MAX(nD1,nD2);       // Big enough for LCM and the products InvSrcXModSrcY * SrcX
+    ndRemainder = SYMCRYPT_MAX(nD1,nD2);     // Big enough for remainders modulo Src1 and Src2
 
     cbGcd = SymCryptSizeofDivisorFromDigits( ndGcd );
     pdGcd = SymCryptDivisorCreate( pbTmp, cbGcd, ndGcd );
@@ -2140,7 +2143,7 @@ testIntGcdEx()
             piInvSrc1ModSrc2,
             piInvSrc2ModSrc1,
             pbTmp,
-            SYMCRYPT_SCRATCH_BYTES_FOR_EXTENDED_GCD( max( nD1, nD2 ) ) );
+            SYMCRYPT_SCRATCH_BYTES_FOR_EXTENDED_GCD( SYMCRYPT_MAX( nD1, nD2 ) ) );
 
     // Verifications
     switch (rand)
@@ -2303,7 +2306,7 @@ ArithModulus::ArithModulus( SIZE_T nDigits, UINT32 nFail )
 }
 
 ArithModulus::~ArithModulus()
-{ 
+{
     InterlockedDecrement64( &m_nArithModulusObjects );
 
     // Delete all modelements
@@ -2365,6 +2368,8 @@ randomArithModulus( SIZE_T nD, UINT32 nFail = 0 )
 VOID
 testModulusObjectLifetime()
 {
+    SIZE_T  nD, n, r;
+
     // We don't modify the Modulus objects very often so that they have plenty of time to gather ModElements
     // and operate on them
     if( (g_rng.byte() & 0x7f) != 0 )
@@ -2373,11 +2378,11 @@ testModulusObjectLifetime()
         goto cleanup;
     }
 
-    SIZE_T  nD = g_rng.sizet( 1, g_digitLimit );
-    SIZE_T  n = g_modulusObjectVector[nD].size();
+    nD = g_rng.sizet( 1, g_digitLimit );
+    n = g_modulusObjectVector[nD].size();
 
     // decide if we will add or remove an object
-    SIZE_T  r = g_rng.sizet( 2 * g_nModulusPerVectorTarget );
+    r = g_rng.sizet( 2 * g_nModulusPerVectorTarget );
 
     if( r < n )
     {
@@ -2404,7 +2409,7 @@ testModulusCopy()
     {
         // Most of the time we skip this test, because we have to delete all the Dst modElements and
         // that throws away a bunch of values that we'd like to test more on.
-        return; 
+        return;
     }
     SIZE_T nD = g_rng.sizet( 1, g_digitLimit );
 
@@ -2423,7 +2428,7 @@ testModulusCopy()
     SymCryptIntCopy( pSrc->m_pScInt, pDst->m_pScInt );
     pDst->m_flags = pSrc->m_flags;
 
-    // Dst is left with an empty set of modElements. 
+    // Dst is left with an empty set of modElements.
     // We can't copy the ones from Src as modElementCopy is not defined between different moduli.
     // (We allow different moduli to use different internal representations.)
 }
@@ -2535,7 +2540,7 @@ ArithModElement::ArithModElement( ArithModulus * pModulus, UINT32 nFail )
         // Pick a random Int value of the right size. Our Int values contain the low-Hamming-weight and small values we need for corner cases.
 
         nSrcDigits = 1 + (UINT32)g_rng.sizet( 2 * nDigits );                // compute this once (min might be a macro)
-        nSrcDigits = min( nSrcDigits, g_digitLimit - 1);
+        nSrcDigits = SYMCRYPT_MIN( nSrcDigits, g_digitLimit - 1);
         pSrc = randomArithInt( nSrcDigits, nFail );
 
         SymCryptIntToModElement( pSrc->m_pScInt, m_pModulus->m_pScModulus, m_pScModElement,g_scratch, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nDigits ) );
@@ -2547,7 +2552,7 @@ ArithModElement::ArithModElement( ArithModulus * pModulus, UINT32 nFail )
     //if( g_rng.byte() & 1 )
     {
         // Negate the value to get values close to the prime
-        
+
     }
 
     InterlockedIncrement64( &m_nArithModElementObjects );
@@ -2561,13 +2566,13 @@ ArithModElement::checkValue()
     UINT32 nBytes = m_pModulus->m_nDigits * (UINT32)g_bytesPerDigit;
     SYMCRYPT_ERROR scError;
 
-    scError = SymCryptModElementGetValue( 
-                        m_pModulus->m_pScModulus, 
-                        m_pScModElement, 
-                        g_scratch, 
-                        nBytes, 
-                        SYMCRYPT_NUMBER_FORMAT_LSB_FIRST, 
-                        &g_scratch[nBytes], 
+    scError = SymCryptModElementGetValue(
+                        m_pModulus->m_pScModulus,
+                        m_pScModElement,
+                        g_scratch,
+                        nBytes,
+                        SYMCRYPT_NUMBER_FORMAT_LSB_FIRST,
+                        &g_scratch[nBytes],
                         SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( m_pModulus->m_nDigits ) );
     CHECK( scError == SYMCRYPT_NO_ERROR, "?" );
 
@@ -2578,7 +2583,7 @@ ArithModElement::checkValue()
 }
 
 ArithModElement::~ArithModElement()
-{ 
+{
     // Check the value
     checkValue();
 
@@ -2707,7 +2712,7 @@ testModElementSetValue()
     }
 
     SymCryptIntGetValue( pSrc->m_pScInt, buf, nBytes, format );
-    
+
     SymCryptModElementSetValue( buf, nBytes, format, pMod->m_pScModulus, pDst->m_pScModElement, g_scratch, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nD ));
     SymCryptIntCopy( pSrc->m_pScInt, pDst->m_pScInt );
     SymCryptIntDivMod( pDst->m_pScInt, pMod->m_pScDivisor, NULL, pDst->m_pScInt, g_scratch, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nD ) );
@@ -2885,11 +2890,18 @@ testModDivPow2()
     UINT32 c;
 
     pDst->checkValue();
-    // Pick an exponent, heavilly weighted to small values
-    exp = 1;
+    // Pick an exponent, heavily weighted to small values
+    exp = 0;
     while( exp < 128 && (g_rng.byte() & 1) == 0 )
     {
         exp++;
+    }
+
+    // Test shift right greater than native word size 1/8th of the time
+    // This exercises masking logic in architecture specific SymCryptFdefModDivSmallPow2 implementations
+    if( (g_rng.byte() & 7) == 0 )
+    {
+        exp += 64;
     }
 
     SymCryptModDivPow2( pMod->m_pScModulus, pSrc->m_pScModElement, exp, pDst->m_pScModElement, g_scratch, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nD ) );
@@ -2906,7 +2918,7 @@ testModDivPow2()
             SymCryptIntAddSameSize( pDst->m_pScInt, pDst->m_pScTmp1, pDst->m_pScInt );  // Int += Mod div 2 + 1
         }
     }
-       
+
     TEST_CHECK_VALUE( pDst );
 }
 
@@ -2966,6 +2978,7 @@ testModInv()
     ArithModulus *pMod;
     ArithModElement *pSrc;
     ArithModElement *pDst;
+    SYMCRYPT_ERROR scError;
 
     // Pick a random digit size that allows primes
     do {
@@ -2991,13 +3004,14 @@ testModInv()
     pDst->checkValue();
 
     // Pass a random value for the source_public flag
-    SymCryptModInv( pMod->m_pScModulus, 
-                    pSrc->m_pScModElement, 
-                    pDst->m_pScModElement, 
-                    (0 - (g_rng.byte() & 1)) & SYMCRYPT_FLAG_DATA_PUBLIC,
-                    g_scratch, 
-                    SYMCRYPT_SCRATCH_BYTES_FOR_MODINV( nD ) );
-    
+    scError = SymCryptModInv( pMod->m_pScModulus,
+                                pSrc->m_pScModElement,
+                                pDst->m_pScModElement,
+                                (0 - (g_rng.byte() & 1)) & SYMCRYPT_FLAG_DATA_PUBLIC,
+                                g_scratch,
+                                SYMCRYPT_SCRATCH_BYTES_FOR_MODINV( nD ) );
+    CHECK( scError == SYMCRYPT_NO_ERROR, "Modular inverse error" );
+
     // Be careful in computing the result. We can only use Dst->Tmp1, and Dst->Tmp2 because pSrc == pDst is allowed.
     SymCryptModElementToInt( pMod->m_pScModulus, pDst->m_pScModElement, pDst->m_pScTmp1, g_scratch, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nD ) );
     SymCryptIntMulSameSize( pSrc->m_pScInt, pDst->m_pScTmp1, pDst->m_pScTmp2, g_scratch, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( nD ) );
@@ -3024,59 +3038,32 @@ testModSetRandom()
     ArithModulus *pMod = NULL;
     ArithModElement *pSrc = NULL;
 
-    UINT32 numOfValidFlags = 6;     // Default number of flag combinations
     UINT32 flags = 0;               // Flags for the SymCryptModSetRandom
-    UINT32 smallM = 0;
 
     // Pick a random modulus
     nDigits = g_rng.sizet( 1, g_digitLimit );
     pMod = randomArithModulus( nDigits );
 
     //
-    // Pick proper flags out of 6 possible combinations
+    // Pick proper flags out of 8 possible combinations
     //  N: Not allowed, A: Allowed
     //    #  Zero    One     MinusOne
     //    0   A       A       A
     //    1   A       A       N
-    //    2   N       A       A
-    //    3   N       A       N
-    //    4   N       N       A
-    //    5   N       N       N
+    //    2   A       N       A     <-- here allow Zero implies allow One
+    //    3   A       N       N     <-- here allow Zero implies allow One
+    //    4   N       A       A
+    //    5   N       A       N
+    //    6   N       N       A
+    //    7   N       N       N
     //
-    //  Special cases:
-    //  When the modulus is 1 only the first combination
-    //  is valid. For 2, only the first 3 combinations
-    //  are valid. And for 3, everything except the last
-    //  combination is valid.
-    //
-
-    // Special cases' treatment
-    if (SymCryptIntBitsizeOfValue( pMod->m_pScInt ) < 3)
-    {
-        smallM = SymCryptIntGetValueLsbits32( pMod->m_pScInt );
-
-        if (smallM==1)
-        {
-            numOfValidFlags = 1;
-        }
-        else if (smallM==2)
-        {
-            numOfValidFlags = 3;
-        }
-        else
-        {
-            numOfValidFlags = 5;
-        }
-    }
 
     // Pick one of the valid combinations uniformly at random
-    do {
-        r = g_rng.byte() & 0x07;
-    } while (r > numOfValidFlags - 1);
+    r = g_rng.byte() & 0x07;
 
     // Set the flags accordingly
-    if (r<2)        { flags |= SYMCRYPT_FLAG_MODRANDOM_ALLOW_ZERO; }
-    if (r<4)        { flags |= SYMCRYPT_FLAG_MODRANDOM_ALLOW_ONE; }
+    if ((r&4)==0)   { flags |= SYMCRYPT_FLAG_MODRANDOM_ALLOW_ZERO; }
+    if ((r&2)==0)   { flags |= SYMCRYPT_FLAG_MODRANDOM_ALLOW_ONE; }
     if ((r&1)==0)   { flags |= SYMCRYPT_FLAG_MODRANDOM_ALLOW_MINUSONE; }
 
     //
@@ -3208,7 +3195,7 @@ testModExp()
                 pMod->m_pScModulus,
                 pB1->m_pScModElement,
                 pE1->m_pScInt,
-                max(1, SymCryptIntBitsizeOfValue(pE1->m_pScInt)),
+                SYMCRYPT_MAX(1, SymCryptIntBitsizeOfValue(pE1->m_pScInt)),
                 flags,
                 peTmp1,
                 pbScratch,
@@ -3219,7 +3206,7 @@ testModExp()
             pMod->m_pScModulus,
             pB1->m_pScModElement,
             pE2->m_pScInt,
-            max(1, SymCryptIntBitsizeOfValue(pE2->m_pScInt)),
+            SYMCRYPT_MAX(1, SymCryptIntBitsizeOfValue(pE2->m_pScInt)),
             flags,
             peTmp2,
             pbScratch,
@@ -3236,7 +3223,7 @@ testModExp()
             pMod->m_pScModulus,
             pB1->m_pScModElement,
             piTmp,
-            max(1, SymCryptIntBitsizeOfValue(piTmp)),
+            SYMCRYPT_MAX(1, SymCryptIntBitsizeOfValue(piTmp)),
             flags,
             peTmp2,
             pbScratch,
@@ -3249,6 +3236,7 @@ testModExp()
 VOID
 testModMultiExp()
 {
+    SYMCRYPT_ERROR scError = SYMCRYPT_NO_ERROR;
     UINT32 nFail;
 
     UINT32 nD;
@@ -3296,8 +3284,8 @@ testModMultiExp()
         pExp = randomArithInt( nDI );
         piExps[i] = pExp->m_pScInt;
 
-        nBitsExps[i] = max( 1, SymCryptIntBitsizeOfValue(piExps[i]));       // We can never pass nBitsExp == 0
-        nBitsExpMax = max( nBitsExpMax, nBitsExps[i] );
+        nBitsExps[i] = SYMCRYPT_MAX( 1, SymCryptIntBitsizeOfValue(piExps[i]));       // We can never pass nBitsExp == 0
+        nBitsExpMax = SYMCRYPT_MAX( nBitsExpMax, nBitsExps[i] );
     }
 
     // Create temporary elements in the g_scratch space
@@ -3319,7 +3307,7 @@ testModMultiExp()
 
 
     // MultiExp
-    SymCryptModMultiExp(
+    scError = SymCryptModMultiExp(
             pmMod,
             peBases,
             piExps,
@@ -3329,6 +3317,7 @@ testModMultiExp()
             peTmp2,         // Set it into Tmp2
             pbScratch,
             SYMCRYPT_SCRATCH_BYTES_FOR_MODMULTIEXP( nD, nBases, nBitsExpMax ) );
+    CHECK( scError == SYMCRYPT_NO_ERROR, "SymCryptModMultiExp failure");
 
     CHECK( SymCryptModElementIsEqual( pMod->m_pScModulus, peTmp1, peTmp2 ), "testModMultiExp mismatch");
 }
@@ -3442,7 +3431,7 @@ testTrialDivision()
 
         SymCryptIntFree( piRem );
         piRem = NULL;
-        SymCryptDivisorFree( pdDiv ); 
+        SymCryptDivisorFree( pdDiv );
         pdDiv = NULL;
     } else {
         // Pick a random prime that should be found
@@ -3471,7 +3460,7 @@ testTrialDivision()
 
 
 //==================================================
-// Simple test functions used for debuggins
+// Simple test functions used for debugging
 //
 
 VOID
@@ -3573,7 +3562,7 @@ debugtestModInv()
     pEl = SymCryptModElementAllocate( pMod );
     SymCryptModElementSetValueUint32( 3, pMod, pEl, g_scratch, SYMCRYPT_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( 1 ) );
 
-    SymCryptModInv( pMod, pEl, pEl, 0, g_scratch, SYMCRYPT_SCRATCH_BYTES_FOR_MODINV( 1 ) );
+    CHECK( SymCryptModInv( pMod, pEl, pEl, 0, g_scratch, SYMCRYPT_SCRATCH_BYTES_FOR_MODINV( 1 ) ) == SYMCRYPT_NO_ERROR, "?" );
 
     SymCryptModElementFree( pMod, pEl );
     SymCryptModulusFree( pMod );
@@ -3671,6 +3660,110 @@ debugtestPrimeGeneration()
     SymCryptCallbackFree(pbScratch);
 }
 
+UINT32 GcdUint32( UINT32 a, UINT32 b )
+{
+    UINT32 t;
+
+    while( a != 0 )
+    {
+        t = b % a;  // GCD( a, b ) == GCD( a, t )
+
+        // Move the bigger term into b, the smaller into a
+        b = a;
+        a = t;
+    }
+
+    return b;
+}
+
+VOID testCompositeModInv()
+{
+    // We just check that ModInv works properly with weird inputs
+    PSYMCRYPT_MODULUS pMod = SymCryptModulusAllocate( 1 );
+    PSYMCRYPT_MODELEMENT pEl = SymCryptModElementAllocate( pMod );
+    PSYMCRYPT_MODELEMENT pInv = SymCryptModElementAllocate( pMod );
+    SIZE_T cbScratch = 1 << 20;
+    PBYTE pbScratch = (PBYTE) SymCryptCallbackAlloc( cbScratch );   // this allocator provides the necessary alignment
+    SYMCRYPT_ERROR scError;
+
+    CHECK( pMod != NULL && pEl != NULL && pbScratch != NULL, "Out of memory" );
+
+    for( int cnt = 0; cnt < 1000; cnt++ )
+    {
+        UINT32 mod = (UINT32) g_rng.sizet( 2, (1<<16) );
+
+        // Must be 2 or odd to even pass the sanity checks for prime moduli
+        if( mod != 2 )
+        {
+            mod |= 1;
+        }
+
+        UINT32 x = (UINT32) g_rng.sizet( mod );
+        CHECK( x < mod, "?" );
+        SymCryptIntSetValueUint32( mod, SymCryptIntFromModulus( pMod ) );
+
+        // Our current code requires the PRIME and DATA_PUBLIC flags.
+
+        UINT32 modFlags = 0;
+        BYTE b = g_rng.byte();
+
+        /* Code to generate random flags (for when we support them)
+        if( b & 1 )
+        {
+            if( b & 2 )
+            {
+                modFlags |= SYMCRYPT_FLAG_DATA_PUBLIC;
+            } else {
+                modFlags |= SYMCRYPT_FLAG_MODULUS_PARITY_PUBLIC;
+            }
+        }
+        if( (b & 4) != 0 && (mod == 2 || (mod &  1) != 0 )  )
+        {
+            // We deliberately limit ourselves to only checking for oddness in primes
+            // as our RSA/DSA code doesn't check for primality when receiving parameters from
+            // outside parties.
+            modFlags |= SYMCRYPT_FLAG_MODULUS_PRIME;
+        }
+        */
+        modFlags = SYMCRYPT_FLAG_DATA_PUBLIC | SYMCRYPT_FLAG_MODULUS_PRIME;
+
+        SymCryptIntToModulus( SymCryptIntFromModulus( pMod ), pMod, g_rng.byte(), modFlags, pbScratch, cbScratch );
+
+        SymCryptModElementSetValueUint32( x, pMod, pEl, pbScratch, cbScratch );
+
+        // We must use DATA_PUBLIC, otherwise the modinv routine blinds the input which
+        // can introduce errors when the modulus isn't prime, and that makes our test
+        // less sensitive.
+        UINT32 opFlags = SYMCRYPT_FLAG_DATA_PUBLIC;
+
+        scError = SymCryptModInv( pMod, pEl, pInv, opFlags, pbScratch, cbScratch );
+
+        // Check that the result is correct when we get no error
+        if( scError == SYMCRYPT_NO_ERROR )
+        {
+            SymCryptModMul( pMod, pEl, pInv, pInv, pbScratch, cbScratch );
+            SYMCRYPT_ERROR scError2 = SymCryptModElementGetValue( pMod, pInv, &b, 1, SYMCRYPT_NUMBER_FORMAT_LSB_FIRST, pbScratch, cbScratch );
+            CHECK( scError2 == SYMCRYPT_NO_ERROR && b == 1, "ModInv * input is not 1" );
+        }
+
+        BOOL coPrime = GcdUint32( x, mod ) == 1;
+
+        CHECK( coPrime || scError != SYMCRYPT_NO_ERROR, "No error for modinv that does not exist" );
+
+        CHECK( (modFlags & SYMCRYPT_FLAG_DATA_PUBLIC) == 0 ||
+                (modFlags & SYMCRYPT_FLAG_MODULUS_PRIME) == 0 ||
+                !coPrime ||
+                scError == SYMCRYPT_NO_ERROR, "Unexpected error for modinverse" );
+    }
+
+    SymCryptWipe(pbScratch,cbScratch);
+    SymCryptCallbackFree(pbScratch);
+    SymCryptModElementFree( pMod, pEl );
+    SymCryptModElementFree( pMod, pInv );
+    SymCryptModulusFree( pMod );
+}
+
+
 VOID
 testArithmetic()
 {
@@ -3695,7 +3788,7 @@ testArithmetic()
     iprint( "    Arithmetic" );
 
     //
-    // Set a woop modulus. 
+    // Set a woop modulus.
     // We pick a random 32-bit value and reject any with a factor < 256
     // that avoids very smooth moduli. The max # prime factors is 3.
     // It must also be odd to make division by 2 mod woopMod easier.
@@ -3722,7 +3815,8 @@ testArithmetic()
     // At this point, the test infrastructure has been set up
     //
 
-    CHECK( g_nOutstandingCheckedAllocs == 0, "Memory leak" );
+    INT64 nOutstandingAllocs = SYMCRYPT_INTERNAL_VOLATILE_READ64(&g_nOutstandingCheckedAllocs);
+    CHECK3( nOutstandingAllocs == 0, "Memory leak %d", nOutstandingAllocs );
 
     //debugtestDiv();
     //debugtestModInv();
@@ -3771,7 +3865,7 @@ testArithmetic()
     rnddRegisterTestFunction( testIntMulSameSize,   "IntMulSameSize", 10 );
     rnddRegisterTestFunction( testIntMulMixedSize,  "IntMulMixedSize", 10 );
     rnddRegisterTestFunction( testIntSquare,        "IntSquare", 10 );
- 
+
     rnddRegisterTestFunction( testDivisorObjectLifetime, "DivisorObjectLifetime", 5 );
     rnddRegisterTestFunction( testDivisorCopy, "DivisorCopy", 1 );
     rnddRegisterTestFunction( testIntDivMod,        "IntDivMod", 10 );
@@ -3781,7 +3875,7 @@ testArithmetic()
 
     rnddRegisterTestFunction( testModulusObjectLifetime, "ModulusObjectLifetime", 5 );
     rnddRegisterTestFunction( testModulusCopy, "ModulusCopy", 1 );
-    
+
     rnddRegisterTestFunction( testModElementObjectLifetime, "ModElementObjectLifetime", 5 );
     rnddRegisterTestFunction( testModElementCopy, "ModElementCopy", 1 );
     rnddRegisterTestFunction( testModElementSetValue, "ModElementSetValue", 1 );
@@ -3810,8 +3904,13 @@ testArithmetic()
 
     rnddRunTest( 5, 1 );
 
-    CHECK3( g_nOutstandingCheckedAllocs == 0, "Memory leak, %d outstanding", (unsigned) g_nOutstandingCheckedAllocs );
+    nOutstandingAllocs = SYMCRYPT_INTERNAL_VOLATILE_READ64(&g_nOutstandingCheckedAllocs);
+    CHECK3( nOutstandingAllocs == 0, "Memory leak, %d outstanding", nOutstandingAllocs );
 
     // iprint( "ModIsEqual globals: EQ = %x, NEQ = %x\n", modIsEqual, modIsNotEqual );
+
+
+    testCompositeModInv();
+
     iprint( "\n" );
 }

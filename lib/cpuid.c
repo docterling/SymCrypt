@@ -7,12 +7,16 @@
 
 #include "precomp.h"
 
+#if (SYMCRYPT_CPU_ARM | SYMCRYPT_CPU_ARM64) & SYMCRYPT_MS_VC
+#include <excpt.h>
+#endif
+
 #if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
 
 //
 // RDRAND availability is signaled by CPUID.1.ecx[30]
 // PCLMULQDQ availability is signaled by CPUID.1.ecx[1]
-// AES_NI availablity is signaled by CPUID.1.ecx[25]
+// AES_NI availability is signaled by CPUID.1.ecx[25]
 // SSSE3 availability is signaled by CPUID.1.ecx[9]
 // SSE3 availability is signaled by CPUID.1.ecx[0]
 // SSE2 availability is signaled by CPUID.1.edx[26]
@@ -26,14 +30,21 @@
 #define CPUID_1_EDX_SSE2_BIT        26
 #define CPUID_1_EDX_SSE_BIT         25
 #define CPUID_1_ECX_AVX_BIT         28
+#define CPUID_1_ECX_CMPXCHG16B_BIT  13
 #define CPUID_70_EBX_AVX2_BIT       5
 #define CPUID_70_EBX_RDSEED_BIT     18
 #define CPUID_70_EBX_SHANI_BIT      29
 #define CPUID_70_EBX_ADX_BIT        19
 #define CPUID_70_EBX_BMI2_BIT       8
+#define CPUID_70_EBX_AVX512F_BIT    16
+#define CPUID_70_EBX_AVX512BW_BIT   30
+#define CPUID_70_EBX_AVX512DQ_BIT   17
+#define CPUID_70_EBX_AVX512VL_BIT   31
+#define CPUID_70_ECX_VAES_BIT       9
+#define CPUID_70_ECX_VPCLMULQDQ_BIT 10
 
 
-#define CPUID_1_ECX_OSXSAVE_BIT     27     
+#define CPUID_1_ECX_OSXSAVE_BIT     27
 
 typedef struct _CPUID_BIT_INFO {
     BYTE                    leaf;
@@ -49,7 +60,7 @@ typedef struct _CPUID_BIT_INFO {
 
 int g_SymCryptCpuid1[4];        // We cache the results of CPUID(1) to help diagnose CPU detection errors
 
-const 
+const
 CPUID_BIT_INFO  cpuidBitInfo[] = {
     {1, WORD_ECX, CPUID_1_ECX_RDRAND_BIT,       SYMCRYPT_CPU_FEATURE_RDRAND },
     {1, WORD_ECX, CPUID_1_ECX_PCLMULQDQ_BIT,    SYMCRYPT_CPU_FEATURE_PCLMULQDQ },
@@ -59,14 +70,19 @@ CPUID_BIT_INFO  cpuidBitInfo[] = {
     {1, WORD_ECX, CPUID_1_ECX_SSE3_BIT,         SYMCRYPT_CPU_FEATURE_SSSE3 },
     {1, WORD_ECX, CPUID_1_ECX_SSSE3_BIT,        SYMCRYPT_CPU_FEATURE_SSSE3 },
     {1, WORD_ECX, CPUID_1_ECX_AVX_BIT,          SYMCRYPT_CPU_FEATURE_AVX2 },
+    {1, WORD_ECX, CPUID_1_ECX_CMPXCHG16B_BIT,   SYMCRYPT_CPU_FEATURE_CMPXCHG16B },
     {7, WORD_EBX, CPUID_70_EBX_AVX2_BIT,        SYMCRYPT_CPU_FEATURE_AVX2 },
     {7, WORD_EBX, CPUID_70_EBX_RDSEED_BIT,      SYMCRYPT_CPU_FEATURE_RDSEED },
     {7, WORD_EBX, CPUID_70_EBX_SHANI_BIT,       SYMCRYPT_CPU_FEATURE_SHANI },
     {7, WORD_EBX, CPUID_70_EBX_ADX_BIT,         SYMCRYPT_CPU_FEATURE_ADX },
     {7, WORD_EBX, CPUID_70_EBX_BMI2_BIT,        SYMCRYPT_CPU_FEATURE_BMI2 },
+    {7, WORD_EBX, CPUID_70_EBX_AVX512F_BIT,     SYMCRYPT_CPU_FEATURE_AVX512 },
+    {7, WORD_EBX, CPUID_70_EBX_AVX512VL_BIT,    SYMCRYPT_CPU_FEATURE_AVX512 },
+    {7, WORD_EBX, CPUID_70_EBX_AVX512BW_BIT,    SYMCRYPT_CPU_FEATURE_AVX512 },
+    {7, WORD_EBX, CPUID_70_EBX_AVX512DQ_BIT,    SYMCRYPT_CPU_FEATURE_AVX512 },
+    {7, WORD_ECX, CPUID_70_ECX_VAES_BIT,        SYMCRYPT_CPU_FEATURE_VAES },
+    {7, WORD_ECX, CPUID_70_ECX_VPCLMULQDQ_BIT,  SYMCRYPT_CPU_FEATURE_VAES },
 };
-
-extern void __cpuid( _Out_writes_(4) int a[4], int b);          // Add SAL annotation to intrinsic declaration to keep Prefast happy.
 
 VOID
 SYMCRYPT_CALL
@@ -77,8 +93,8 @@ SymCryptDetectCpuFeaturesByCpuid( UINT32 flags )
     int     InfoType;
     int     maxInfoType;
     int     i;
-    BOOLEAN allowYmm;
-    __int64 xGetBvResult;
+    BOOLEAN allowYmm, allowZmm;
+    INT64 xGetBvResult;
 
     //
     // Mark all features as present (the result bits indicate not-present, so set the features we know to 0).
@@ -93,10 +109,15 @@ SymCryptDetectCpuFeaturesByCpuid( UINT32 flags )
         SYMCRYPT_CPU_FEATURE_BMI2       |
         SYMCRYPT_CPU_FEATURE_ADX        |
         SYMCRYPT_CPU_FEATURE_RDRAND     |
-        SYMCRYPT_CPU_FEATURE_RDSEED
+        SYMCRYPT_CPU_FEATURE_RDSEED     |
+        SYMCRYPT_CPU_FEATURE_AVX512     |
+        SYMCRYPT_CPU_FEATURE_VAES       |
+        SYMCRYPT_CPU_FEATURE_CMPXCHG16B
         );
 
-    InfoType = 0; 
+    // InfoType holds the function id of previous cpuid
+    // so we don't have to repeatedly invoke cpuid.
+    InfoType = 0;
     SymCryptCpuidExFunc( CPUInfo, InfoType, 0 );
     maxInfoType = CPUInfo[WORD_EAX];
 
@@ -107,7 +128,7 @@ SymCryptDetectCpuFeaturesByCpuid( UINT32 flags )
             InfoType = cpuidBitInfo[i].leaf;
             SymCryptCpuidExFunc( CPUInfo, InfoType, 0 );
         }
-        if( cpuidBitInfo[i].leaf > maxInfoType || (CPUInfo[ cpuidBitInfo[i].word ] & (1 << cpuidBitInfo[i].bitno) ) == 0 )
+        if( cpuidBitInfo[i].leaf > maxInfoType || (CPUInfo[ cpuidBitInfo[i].word ] & (1UL << cpuidBitInfo[i].bitno) ) == 0 )
         {
             result |= cpuidBitInfo[i].requiredBy;
         }
@@ -117,16 +138,17 @@ SymCryptDetectCpuFeaturesByCpuid( UINT32 flags )
     {
         //
         // Check for OS support of the YMM registers.
-        // This detection is optional in any environment because some environments are single-threaded, and 
+        // This detection is optional in any environment because some environments are single-threaded, and
         // OS support is not required. (E.g. Boot library.)
         //
         // We use the following logic:
         // Check that the OSXSAVE bit is 1, which means we can use XGETBV
-        // Use XGETBV and check that XCR0[2:1] = '11b' signalign that both XMM and YMM are enabled by OS
+        // Use XGETBV and check that XCR0[2:1] = '11b' signaling that both XMM and YMM are enabled by OS
         // Note that we only disable the AVX2 usage; AESNI & XMM registers are used independent of OS support, because
         // all our (known) OSes have it.
         //
         allowYmm = FALSE;
+        allowZmm = FALSE;
         SymCryptCpuidExFunc( CPUInfo, 1, 0 );
 
         if( (CPUInfo[WORD_ECX] & (1 << CPUID_1_ECX_OSXSAVE_BIT)) != 0 )
@@ -138,6 +160,24 @@ SymCryptDetectCpuFeaturesByCpuid( UINT32 flags )
             if( (xGetBvResult & 0x6) == 0x6)
             {
                 allowYmm = TRUE;
+
+                //
+                // For AVX-512, also check that bits 5, 6, and 7 are set, corresponding to the
+                // opmask, ZMM (0-15), and ZMM (16-31) register states
+                // This follows the recommendation in the Intel 64 and IA-32 Architectures Software
+                // Developer's Manual, Volume 1, 15.3 / 15.4.
+                //
+                // It seems plausible that on some system the OS would not support save/restore of
+                // AVX-512 state, but use of AVX-512VL instructions on Ymm or Xmm registers would be
+                // OK, however Intel explicitly suggests that we should only use AVX512-VL if the
+                // support is indicated by xgetbv, so we use the same logic as for AVX2 (our
+                // SymCrypt feature indicates both CPU support, and OS support for saving/restoring
+                // the extended state)
+                //
+                if( (xGetBvResult & 0xe0) == 0xe0)
+                {
+                    allowZmm = TRUE;
+                }
             }
         }
 
@@ -146,15 +186,24 @@ SymCryptDetectCpuFeaturesByCpuid( UINT32 flags )
             // Disallow the AVX2-dependent code because we don't have OS YMM support.
             result |= SYMCRYPT_CPU_FEATURE_AVX2;
         }
+
+        if( !allowZmm )
+        {
+            // Disallow any AVX512-dependent code because we don't have OS ZMM support.
+            // Note that not all AVX-512 dependent code will need to save/restore ZMM state, but we
+            // do not support AVX-512 instructions (even acting on YMM or XMM registers), unless the
+            // OS indicates support via XCR0
+            result |= SYMCRYPT_CPU_FEATURE_AVX512;
+        }
     }
 
 
     if( (result & SYMCRYPT_CPU_FEATURE_AESNI) == 0 )    // thus, if AES-NI is present according to CPUID
     {
         //
-        // In Win7 Beta we had an interesting crash bucket. 
+        // In Win7 Beta we had an interesting crash bucket.
         // It only occurred on the AsusTek A6K line of laptops which sometimes
-        // set the cpuid AES-NI bit (but not always). This leads to a crash as 
+        // set the cpuid AES-NI bit (but not always). This leads to a crash as
         // we start using AES instructions that don't exist on those machines.
         //
         // I found on-line reviews for the A6K line from december 2005 so it was launched around
@@ -166,13 +215,13 @@ SymCryptDetectCpuFeaturesByCpuid( UINT32 flags )
         // We really shouldn't need this logic, and it only slows things down.
         // We should be able to remove it at some point in the future.
         //
-        // At AMD's recommendation, we use the logic below. 
+        // At AMD's recommendation, we use the logic below.
         // The AMD engineers reviewed this code to ensure we don't lock out future CPUs
         // that will have AES-NI.
         //
         SymCryptCpuidExFunc( CPUInfo, 0, 0 );
-        if(    CPUInfo[WORD_EBX] == 'htuA' 
-            && CPUInfo[WORD_ECX] == 'DMAc' 
+        if(    CPUInfo[WORD_EBX] == 'htuA'
+            && CPUInfo[WORD_ECX] == 'DMAc'
             && CPUInfo[WORD_EDX] == 'itne' )
         {
             //
@@ -225,9 +274,6 @@ SymCryptDetectCpuFeaturesByCpuid( UINT32 flags )
 #define ISAR5_AES_AESE         1
 #define ISAR5_AES_PMULL        2
 
-#define ISAR5_SHA1             2
-#define ISAR5_SHA1_SHA1C       1
-
 #define ISAR5_SHA2             3
 #define ISAR5_SHA2_SHA256H     1
 
@@ -236,7 +282,7 @@ SymCryptDetectCpuFeaturesByCpuid( UINT32 flags )
 
 VOID
 SYMCRYPT_CALL
-SymCryptDetectCpuFeaturesFromRegisters()
+SymCryptDetectCpuFeaturesFromRegisters(void)
 {
     ULONG result;
 
@@ -250,8 +296,7 @@ SymCryptDetectCpuFeaturesFromRegisters()
         SYMCRYPT_CPU_FEATURE_NEON           |
         SYMCRYPT_CPU_FEATURE_NEON_AES       |
         SYMCRYPT_CPU_FEATURE_NEON_PMULL     |
-        SYMCRYPT_CPU_FEATURE_NEON_SHA256    |
-        SYMCRYPT_CPU_FEATURE_NEON_SHA1
+        SYMCRYPT_CPU_FEATURE_NEON_SHA256
         );
 
     //
@@ -274,16 +319,11 @@ SymCryptDetectCpuFeaturesFromRegisters()
             result |= SYMCRYPT_CPU_FEATURE_NEON_SHA256;
         }
 
-        if( READ_ARM_FEATURE(CP15_ISAR5, ISAR5_SHA1) < ISAR5_SHA1_SHA1C )
-        {
-            result |= SYMCRYPT_CPU_FEATURE_NEON_SHA1;
-        }
-
     } except(EXCEPTION_EXECUTE_HANDLER) {
         //
         // Something went wrong reading the registers; disable all the crypto extensions leaving only the standard NEON registers available.
         //
-        restult |= SYMCRYPT_CPU_FEATURE_NEON_AES | SYMCRYPT_CPU_FEATURE_NEON_PMULL | SYMCRYPT_CPU_FEATURE_NEON_SHA256 | SYMCRYPT_CPU_FEATURE_NEON_SHA1l
+        result |= SYMCRYPT_CPU_FEATURE_NEON_AES | SYMCRYPT_CPU_FEATURE_NEON_PMULL | SYMCRYPT_CPU_FEATURE_NEON_SHA256;
     }
 #endif
     //
@@ -303,7 +343,7 @@ SymCryptDetectCpuFeaturesFromRegisters()
           ((op1 & 7) << 11) | \
           ((crn & 15) << 7) | \
           ((crm & 15) << 3) | \
-          ((op2 & 7) << 0) ) 
+          ((op2 & 7) << 0) )
 
 #define ARM64_ID_AA64ISAR0_EL1  ARM64_SYSREG(3,0, 0, 6,0)   // ISA Feature Register 0
 
@@ -311,10 +351,6 @@ SymCryptDetectCpuFeaturesFromRegisters()
 #define ISAR0_AES_NI                0
 #define ISAR0_AES_INSTRUCTIONS      1
 #define ISAR0_AES_PLUS_PMULL64      2
-
-#define ISAR0_SHA1                  2
-#define ISAR0_SHA1_NI               0
-#define ISAR0_SHA1_INSTRUCTIONS     1
 
 #define ISAR0_SHA2                  3
 #define ISAR0_SHA2_NI               0
@@ -329,7 +365,7 @@ SymCryptDetectCpuFeaturesFromRegisters()
 
 VOID
 SYMCRYPT_CALL
-SymCryptDetectCpuFeaturesFromRegisters()
+SymCryptDetectCpuFeaturesFromRegisters(void)
 {
     ULONG result;
 
@@ -337,12 +373,11 @@ SymCryptDetectCpuFeaturesFromRegisters()
         SYMCRYPT_CPU_FEATURE_NEON           |
         SYMCRYPT_CPU_FEATURE_NEON_AES       |
         SYMCRYPT_CPU_FEATURE_NEON_PMULL     |
-        SYMCRYPT_CPU_FEATURE_NEON_SHA256    |
-        SYMCRYPT_CPU_FEATURE_NEON_SHA1
+        SYMCRYPT_CPU_FEATURE_NEON_SHA256
         );
 
-
-    try {
+#if SYMCRYPT_MS_VC
+    __try {
 
         if( READ_ARM64_FEATURE(ARM64_ID_AA64ISAR0_EL1, ISAR0_AES) < ISAR0_AES_INSTRUCTIONS )
         {
@@ -356,19 +391,15 @@ SymCryptDetectCpuFeaturesFromRegisters()
 
         if( READ_ARM64_FEATURE(ARM64_ID_AA64ISAR0_EL1, ISAR0_SHA2) < ISAR0_SHA2_INSTRUCTIONS )
         {
-            result |= SYMCRYPT_CPU_FEATURE_NEON_SHA1;
-        }
-
-        if( READ_ARM64_FEATURE(ARM64_ID_AA64ISAR0_EL1, ISAR0_SHA1) < ISAR0_SHA1_INSTRUCTIONS )
-        {
             result |= SYMCRYPT_CPU_FEATURE_NEON_SHA256;
         }
 
         g_SymCryptCpuFeaturesNotPresent = (SYMCRYPT_CPU_FEATURES) result;
 
-    } except(EXCEPTION_EXECUTE_HANDLER) {
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
         ; //NOTHING;
     }
+#endif
 
 }
 

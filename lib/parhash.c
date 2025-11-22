@@ -7,17 +7,18 @@
 
 #include "precomp.h"
 
-VOID
+SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptParallelHashProcess_serial(
-    _In_                                                PCSYMCRYPT_PARALLEL_HASH            pParHash,
-    _Inout_updates_bytes_( nStates * pHash->stateSize ) PVOID                               pStates,
-                                                        SIZE_T                              nStates,
-    _Inout_updates_( nOperations )                      PSYMCRYPT_PARALLEL_HASH_OPERATION   pOperations,
-                                                        SIZE_T                              nOperations,
-    _Out_writes_( cbScratch )                           PBYTE                               pbScratch,
-                                                        SIZE_T                              cbScratch )
+    _In_                                                            PCSYMCRYPT_PARALLEL_HASH            pParHash,
+    _Inout_updates_bytes_( nStates * pParHash->pHash->stateSize )   PVOID                               pStates,
+                                                                    SIZE_T                              nStates,
+    _Inout_updates_( nOperations )                                  PSYMCRYPT_PARALLEL_HASH_OPERATION   pOperations,
+                                                                    SIZE_T                              nOperations,
+    _Out_writes_( cbScratch )                                       PBYTE                               pbScratch,
+                                                                    SIZE_T                              cbScratch )
 {
+    SYMCRYPT_ERROR scError = SYMCRYPT_NO_ERROR;
     SIZE_T i;
     PSYMCRYPT_PARALLEL_HASH_OPERATION op;
     PCSYMCRYPT_HASH pHash;
@@ -27,12 +28,13 @@ SymCryptParallelHashProcess_serial(
 
     //
     // Wipe the scratch space to detect erroneous callers.
-    // We do this so that callers that test on a non-parallel platform will work on a platform that does support 
+    // We do this so that callers that test on a non-parallel platform will work on a platform that does support
     // parallel operations.
     //
     if( cbScratch < pParHash->parScratchFixed + nStates * SYMCRYPT_PARALLEL_HASH_PER_STATE_SCRATCH )
     {
-        SymCryptFatal( 'ps2s' );
+        scError = SYMCRYPT_BUFFER_TOO_SMALL;
+        goto cleanup;
     }
     SymCryptWipeKnownSize( pbScratch, pParHash->parScratchFixed + nStates * SYMCRYPT_PARALLEL_HASH_PER_STATE_SCRATCH );
 
@@ -40,8 +42,8 @@ SymCryptParallelHashProcess_serial(
     {
         if( op->iHash >= nStates )
         {
-            SymCryptFatal( 'ps2i' );
-            return;                 // prefast doesn't understand that SymCryptFatal doesn't return despite the annotation
+            scError = SYMCRYPT_INVALID_ARGUMENT;
+            goto cleanup;
         }
         switch( op->hashOperation )
         {
@@ -52,16 +54,21 @@ SymCryptParallelHashProcess_serial(
         case SYMCRYPT_HASH_OPERATION_RESULT:
             if( op->cbBuffer != pHash->resultSize )
             {
-                SymCryptFatal( 'ps2r' );
+                scError = SYMCRYPT_INVALID_ARGUMENT;
+                goto cleanup;
             }
             (*pHash->resultFunc)( (PBYTE)pStates + pHash->stateSize * op->iHash, op->pbBuffer );
             break;
 
         default:
-            SymCryptFatal( 'ps2o');
+            scError = SYMCRYPT_INVALID_ARGUMENT;
+            goto cleanup;
         }
         op++;
     }
+
+cleanup:
+    return scError;
 }
 
 //
@@ -104,12 +111,12 @@ SymCryptParallelHashSetNextWork( PCSYMCRYPT_PARALLEL_HASH pParHash, PSYMCRYPT_PA
         // STATE_NEXT: cbData == 0 and we have to process the remaining operations.
         // STATE_DATA_START: We are working on the next operation; the first BytesAlreadyProcessed have been hashed,
         //                      and the hash state has an empty buffer.
-        // STATE_DATA_END: We are working on the next operation (an append), and pbData/cbData have whatever partial block remains 
+        // STATE_DATA_END: We are working on the next operation (an append), and pbData/cbData have whatever partial block remains
         //                  after all the whole blocks have been processed.
         // STATE_PAD2:      We are working on the next operation (a result), and have processed the first half of a 2-block padding.
         // STATE_RESULT:    We are working on the next operation (a result), and have processed all the padding.
         //
-        // The pState->dataLength is updated whenver we copy bytes from the append into the state's buffer, or when
+        // The pState->dataLength is updated whenever we copy bytes from the append into the state's buffer, or when
         //      we return TRUE and process bulk data.
         //
         pOp = pScratch->next;
@@ -137,13 +144,13 @@ SymCryptParallelHashSetNextWork( PCSYMCRYPT_PARALLEL_HASH pParHash, PSYMCRYPT_PA
                 {
                     SYMCRYPT_ASSERT( pHash->inputBlockSize > bytesInBuffer );
 
-                    todo = min( pHash->inputBlockSize - bytesInBuffer, pOp->cbBuffer );
+                    todo = SYMCRYPT_MIN( pHash->inputBlockSize - bytesInBuffer, pOp->cbBuffer );
                     memcpy( &pState->buffer[bytesInBuffer], pOp->pbBuffer, todo );
                     pState->bytesInBuffer += (UINT32) todo;
                     if( pState->bytesInBuffer == pHash->inputBlockSize )
                     {
                         //
-                        // We filled the buffer; set it for processing. 
+                        // We filled the buffer; set it for processing.
                         // Remember the # bytes we did and set the next state to process the rest of the request.
                         //
                         pScratch->pbData = &pState->buffer[0];
@@ -192,7 +199,7 @@ SymCryptParallelHashSetNextWork( PCSYMCRYPT_PARALLEL_HASH pParHash, PSYMCRYPT_PA
                 }
             } else {
                 SYMCRYPT_ASSERT( pOp->hashOperation == SYMCRYPT_HASH_OPERATION_RESULT );
-                
+
                 if( (*pParHash->parResult1Func)( pParHash, pState, pScratch, &res ) )
                 {
                     return res;
@@ -253,17 +260,16 @@ SymCryptParallelHashSetNextWork( PCSYMCRYPT_PARALLEL_HASH pParHash, PSYMCRYPT_PA
             continue;
         }
     }
-    
+
     return FALSE;
 }
 
 
 //
 // Comparison function used to sort the work into largest-first order.
-// 
-int
-__cdecl
-compareRequestSize( const void * p1, const void * p2 )
+//
+int SYMCRYPT_CDECL
+compareRequestSize( PCVOID p1, PCVOID p2 )
 {
     PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE * pp1 = (PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE *) p1;
     PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE * pp2 = (PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE *) p2;
@@ -285,18 +291,19 @@ compareRequestSize( const void * p1, const void * p2 )
     }
 }
 
-VOID
+SYMCRYPT_ERROR
 SYMCRYPT_CALL
 SymCryptParallelHashProcess(
-    _In_                                                PCSYMCRYPT_PARALLEL_HASH            pParHash,
-    _Inout_updates_bytes_( nStates * pHash->stateSize ) PVOID                               pStates,
-                                                        SIZE_T                              nStates,
-    _Inout_updates_( nOperations )                      PSYMCRYPT_PARALLEL_HASH_OPERATION   pOperations,
-                                                        SIZE_T                              nOperations,
-    _Out_writes_( cbScratch )                           PBYTE                               pbScratch,
-                                                        SIZE_T                              cbScratch,
-                                                        UINT32                              maxParallel )
+    _In_                                                            PCSYMCRYPT_PARALLEL_HASH            pParHash,
+    _Inout_updates_bytes_( nStates * pParHash->pHash->stateSize )   PVOID                               pStates,
+                                                                    SIZE_T                              nStates,
+    _Inout_updates_( nOperations )                                  PSYMCRYPT_PARALLEL_HASH_OPERATION   pOperations,
+                                                                    SIZE_T                              nOperations,
+    _Out_writes_( cbScratch )                                       PBYTE                               pbScratch,
+                                                                    SIZE_T                              cbScratch,
+                                                                    UINT32                              maxParallel )
 {
+    SYMCRYPT_ERROR                          scError = SYMCRYPT_NO_ERROR;
     PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE   pScratchState;
     PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE * pWork;
     SIZE_T                                  nWork;
@@ -316,7 +323,7 @@ SymCryptParallelHashProcess(
 
     if( nOperations == 0 )
     {
-        return;
+        goto cleanup;
     }
 
     pHash = pParHash->pHash;
@@ -339,7 +346,8 @@ SymCryptParallelHashProcess(
 
     if( pbFixedScratch + cbFixedScratch > pbScratchEnd )
     {
-        SymCryptFatal( 'ps2.' );
+        scError = SYMCRYPT_BUFFER_TOO_SMALL;
+        goto cleanup;
     }
 
     //
@@ -351,10 +359,10 @@ SymCryptParallelHashProcess(
     //
     // The general data structure is as follows.
     // For each hash state, we keep our administration in the pScratchState[i]. This contains a pointer to the actual
-    // hash state, a pointer to a linked list of operations to be performed on this state, pointer/length of the 
+    // hash state, a pointer to a linked list of operations to be performed on this state, pointer/length of the
     // current data to be processed, and a few more administrative items.
     // We also keep the pWork array of pointers to our scratch states, which contains all the states that still need
-    // work to be done. 
+    // work to be done.
     //
     // We process over the operations in reverse order to make it easy to build a forward single-linked list
     //
@@ -365,7 +373,8 @@ SymCryptParallelHashProcess(
 
         if( pOp->iHash >= nStates )
         {
-            SymCryptFatal( 'ps2x' );
+            scError = SYMCRYPT_INVALID_ARGUMENT;
+            goto cleanup;
         }
 
         pSc = &pScratchState[ pOp->iHash ];
@@ -396,7 +405,8 @@ SymCryptParallelHashProcess(
             //
             pSc->bytes += pHash->inputBlockSize;
         } else {
-            SymCryptFatal( 'ps2y' );
+            scError = SYMCRYPT_INVALID_ARGUMENT;
+            goto cleanup;
         }
 
         //
@@ -436,7 +446,7 @@ SymCryptParallelHashProcess(
         qsort( pWork, nWork, sizeof( *pWork ), &compareRequestSize );
     }
 
-    nPar = min( nWork, maxParallel );  // # parallel states we currently work on
+    nPar = SYMCRYPT_MIN( nWork, maxParallel );  // # parallel states we currently work on
     pNextWork = pWork + nPar;        // next work pointer.
 
     while( nWork > 0 )
@@ -444,7 +454,7 @@ SymCryptParallelHashProcess(
         todo = pWork[0]->cbData;
         for( i=1; i<nPar; i++ )
         {
-            todo = min( todo, pWork[i]->cbData );
+            todo = SYMCRYPT_MIN( todo, pWork[i]->cbData );
         }
 
         nBytes = todo & ~(pHash->inputBlockSize - 1 );
@@ -455,10 +465,10 @@ SymCryptParallelHashProcess(
         {
             if( pWork[i]->cbData < pHash->inputBlockSize )
             {
-                // 
+                //
                 // Once we start a request we finish it; this is not optimal.
                 // It would be better to switch things around a bit, but that is much more complicated.
-                // Example: suppose we can do 4-parallel and have requests of size 
+                // Example: suppose we can do 4-parallel and have requests of size
                 //  9 8 7 6 6 6
                 // Our code does
                 //    Process first 4 of    # blocks      Resulting state
@@ -480,7 +490,7 @@ SymCryptParallelHashProcess(
                 //  2 more to finish for a total of 11 blocks.
                 // Note that this last one requires the interruption of a started hash computation.
                 //
-                
+
                 if( !SymCryptParallelHashSetNextWork( pParHash, pWork[i] ))
                 {
                     if( nWork > nPar )
@@ -501,4 +511,7 @@ SymCryptParallelHashProcess(
         }
     }
     SymCryptWipe( pbFixedScratch, cbFixedScratch );
+
+cleanup:
+    return scError;
 }

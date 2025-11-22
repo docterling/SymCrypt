@@ -30,7 +30,7 @@ VOID Rng::reset( PCBYTE pbData, SIZE_T cbData )
 
 BYTE Rng::byte()
 {
-    CHECK( m_blockCtr != -1, "Use of unseeded Rng object" );
+    CHECK( m_blockCtr != (ULONGLONG) -1, "Use of unseeded Rng object" );
 
     if( m_bytesInBuf == 0 )
     {
@@ -51,7 +51,7 @@ BYTE Rng::byte()
 
 UINT32 Rng::uint32()
 {
-    CHECK( m_blockCtr != -1, "Use of unseeded Rng object" );
+    CHECK( m_blockCtr != (ULONGLONG) -1, "Use of unseeded Rng object" );
 
     if( m_bytesInBuf < 4 )
     {
@@ -124,7 +124,7 @@ Rng::sizetNonUniform( SIZE_T upb, SIZE_T uniformLimit, ULONG logIncrease )
         prob >>= 1;
         limit <<= logIncrease;
     }
-    limit = min( upb, limit );
+    limit = SYMCRYPT_MIN( upb, limit );
     return sizet( limit );
 }
 
@@ -132,7 +132,7 @@ VOID Rng::randomSubRange( SIZE_T bufSize, SIZE_T * pStart, SIZE_T * pLen )
 {
     SIZE_T a = sizet( bufSize );
     SIZE_T b = sizet( bufSize );
-    *pStart = min( a, b );
-    *pLen = max( a, b ) - min( a, b);
+    *pStart = SYMCRYPT_MIN( a, b );
+    *pLen = SYMCRYPT_MAX( a, b ) - SYMCRYPT_MIN( a, b);
 }
 

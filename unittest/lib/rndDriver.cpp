@@ -1,10 +1,11 @@
 //
 // rndDriver.cpp random test driver
 //
-// Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
+// Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 
 #include "precomp.h"
+#include <memory>
 
 typedef struct _FUNCTION_RECORD {
     RNDD_TEST_FN    func;
@@ -24,13 +25,13 @@ PFUNCTION_RECORD  g_aBucket[N_BUCKETS];
 
 UINT32  g_totalWeight;
 
-std::vector<FUNCTION_RECORD *> g_testFunctions;
+std::vector<std::unique_ptr<FUNCTION_RECORD>> g_testFunctions;
 
-std::vector<FUNCTION_RECORD *> g_initFunctions;
+std::vector<std::unique_ptr<FUNCTION_RECORD>> g_initFunctions;
 
-std::vector<FUNCTION_RECORD *> g_cleanupFunctions;
+std::vector<std::unique_ptr<FUNCTION_RECORD>> g_cleanupFunctions;
 
-std::vector<FUNCTION_RECORD *> g_invariantFunctions;
+std::vector<std::unique_ptr<FUNCTION_RECORD>> g_invariantFunctions;
 
 BOOL g_invariantFunctionsUsed = FALSE;
 
@@ -44,13 +45,13 @@ recomputeBuckets()
 
     CHECK( g_totalWeight < (1 << 16 ), "Too much total weight, could lead to overflow" );
 
-    for( std::vector<FUNCTION_RECORD *>::iterator i = g_testFunctions.begin(); i != g_testFunctions.end(); i++ )
+    for( std::vector<std::unique_ptr<FUNCTION_RECORD>>::iterator i = g_testFunctions.begin(); i != g_testFunctions.end(); i++ )
     {
         w += (*i)->weight;
         while( w * N_BUCKETS > g_totalWeight * b )
         {
             CHECK( b < N_BUCKETS, "?" );
-            g_aBucket[ b ] = *i;
+            g_aBucket[ b ] = (*i).get();
             b += 1;
         }
     }
@@ -60,12 +61,12 @@ recomputeBuckets()
 VOID
 rnddRegisterTestFunction( RNDD_TEST_FN func, char * name, UINT32 weight )
 {
-    PFUNCTION_RECORD p = new FUNCTION_RECORD;
+    std::unique_ptr<FUNCTION_RECORD> p(new FUNCTION_RECORD);
     p->func = func;
     p->name = name;
     p->weight = weight;
-    p->count = 0;
-    g_testFunctions.push_back( p );
+    SYMCRYPT_INTERNAL_VOLATILE_WRITE64(&(p->count), 0);
+    g_testFunctions.push_back( std::move(p) );
 
     g_totalWeight += weight;
 }
@@ -73,40 +74,49 @@ rnddRegisterTestFunction( RNDD_TEST_FN func, char * name, UINT32 weight )
 VOID
 rnddRegisterInitFunction( RNDD_TEST_FN func )
 {
-    PFUNCTION_RECORD p = new FUNCTION_RECORD;
+    std::unique_ptr<FUNCTION_RECORD> p(new FUNCTION_RECORD);
 
     p->func = func;
     p->weight = 0;
-    g_initFunctions.push_back( p );
-}   
+    g_initFunctions.push_back( std::move(p) );
+}
 
 
 VOID
 rnddRegisterCleanupFunction( RNDD_TEST_FN func )
 {
-    PFUNCTION_RECORD p = new FUNCTION_RECORD;
+    std::unique_ptr<FUNCTION_RECORD> p(new FUNCTION_RECORD);
 
     p->func = func;
     p->weight = 0;
-    g_cleanupFunctions.push_back( p );
-}   
+    g_cleanupFunctions.push_back( std::move(p) );
+}
 
 VOID
 rnddRegisterInvariantFunction( RNDD_TEST_FN func )
 {
-    PFUNCTION_RECORD p = new FUNCTION_RECORD;
+    std::unique_ptr<FUNCTION_RECORD> p(new FUNCTION_RECORD);
 
     p->func = func;
     p->weight = 0;
-    g_invariantFunctions.push_back( p );
+    g_invariantFunctions.push_back( std::move(p) );
 
     g_invariantFunctionsUsed = TRUE;
-}   
+}
 
 ULONGLONG
 getTimeInMs()    // Will have to move it to the main_exe or main_dll when we support kernel mode
 {
+#if SYMCRYPT_MS_VC
     return GetTickCount64();
+#elif SYMCRYPT_GNUC
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)(ts.tv_nsec / 1000000) + ((uint64_t)ts.tv_sec * 1000ull);
+#else
+#error "Need GetTickCount64!"
+return 0;
+#endif
 }
 
 VOID
@@ -120,7 +130,7 @@ rnddRunTest( UINT32 nSeconds, UINT32 nThreads )
     CHECK( 0 < nThreads && nThreads <= 1, "?" );    // Currently only 1 thread supported
     CHECK( 0 < nSeconds && nSeconds < 100, "Invalid test duration" );
 
-    for( std::vector<FUNCTION_RECORD *>::iterator i = g_initFunctions.begin(); i != g_initFunctions.end(); i++ )
+    for( std::vector<std::unique_ptr<FUNCTION_RECORD>>::iterator i = g_initFunctions.begin(); i != g_initFunctions.end(); i++ )
     {
         (*((*i)->func))();
     }
@@ -137,7 +147,7 @@ rnddRunTest( UINT32 nSeconds, UINT32 nThreads )
 
             if( g_invariantFunctionsUsed )
             {
-                for( std::vector<FUNCTION_RECORD *>::iterator i = g_invariantFunctions.begin(); i != g_invariantFunctions.end(); i++ )
+                for( std::vector<std::unique_ptr<FUNCTION_RECORD>>::iterator i = g_invariantFunctions.begin(); i != g_invariantFunctions.end(); i++ )
                 {
                     (*((*i)->func))();
                 }
@@ -147,16 +157,15 @@ rnddRunTest( UINT32 nSeconds, UINT32 nThreads )
     } while( getTimeInMs() < timeLimit );
 
     print( "\n" );
-    for( std::vector<FUNCTION_RECORD *>::iterator i = g_testFunctions.begin(); i != g_testFunctions.end(); i++ )
+    for( std::vector<std::unique_ptr<FUNCTION_RECORD>>::iterator i = g_testFunctions.begin(); i != g_testFunctions.end(); i++ )
     {
-        print( "%30s : %I64d\n", (*i)->name, (*i)->count );
+        print( "%30s : %8" PRId64 "\n", (*i)->name, SYMCRYPT_INTERNAL_VOLATILE_READ64(&(*i)->count) );
     }
     iprint( "\n" );
 
-    for( std::vector<FUNCTION_RECORD *>::iterator i = g_cleanupFunctions.begin(); i != g_cleanupFunctions.end(); i++ )
+    for( std::vector<std::unique_ptr<FUNCTION_RECORD>>::iterator i = g_cleanupFunctions.begin(); i != g_cleanupFunctions.end(); i++ )
     {
         (*((*i)->func))();
     }
-
 }
 

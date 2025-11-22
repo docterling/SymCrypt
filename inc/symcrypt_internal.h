@@ -9,7 +9,7 @@
 // but which still needs to be known to the compiler to be able to use the library.
 // This includes structure declarations and all support for inline implementations
 // of some of the library functions.
-// Information in this file is not part of tha API and can change at any time.
+// Information in this file is not part of the API and can change at any time.
 //
 
 //
@@ -21,39 +21,62 @@
 #endif
 
 //==============================================================================================
-//  COMPILER DETECTION
+//  PLATFORM/COMPILER DETECTION
 //==============================================================================================
 
-#define SYMCRYPT_MS_VC      0
-#define SYMCRYPT_APPLE_CC   0
+#define SYMCRYPT_PLATFORM_WINDOWS 0
+#define SYMCRYPT_PLATFORM_APPLE   0 // macOS and other Apple platforms
+#define SYMCRYPT_PLATFORM_UNIX    0 // Linux and other Unix-likes, besides macOS. Must support POSIX.
+
+#if defined(_WIN32)
+    #undef  SYMCRYPT_PLATFORM_WINDOWS
+    #define SYMCRYPT_PLATFORM_WINDOWS 1
+#elif defined(__APPLE__)
+    #undef  SYMCRYPT_PLATFORM_APPLE
+    #define SYMCRYPT_PLATFORM_APPLE 1
+#elif (defined(linux) || defined(__unix__))
+    #undef  SYMCRYPT_PLATFORM_UNIX
+    #define SYMCRYPT_PLATFORM_UNIX 1
+#endif
+
+#define SYMCRYPT_MS_VC       0 // Microsoft compiler (cl.exe - Visual Studio/MSBuild)
+#define SYMCRYPT_GNUC        0 // GCC and compatible compilers (including Clang)
 
 #if defined(_MSC_VER)
-
     #undef  SYMCRYPT_MS_VC
     #define SYMCRYPT_MS_VC  1
-
-#elif defined(__APPLE_CC__)
-
-    #undef  SYMCRYPT_APPLE_CC
-    #define SYMCRYPT_APPLE_CC  1
-    
-    // Suppress the SAL annotations for the APPLE compiler
-    #include "symcrypt_no_sal.h"
-
-    // Ignore the multi-character character constant warnings
-    #pragma GCC diagnostic ignored "-Wmultichar"
-    
-    #define SYMCRYPT_IGNORE_PLATFORM
-    
-    #define C_ASSERT(e)                 typedef char __C_ASSERT__[(e)?1:-1]
-    #define ANYSIZE_ARRAY               1
-    #define FORCEINLINE                 static inline //__inline__ __attribute__ ((always_inline))
-    #define DECLSPEC_NOINLINE
-    #define UNALIGNED
-
+#elif defined(__GNUC__)
+    #undef  SYMCRYPT_GNUC
+    #define SYMCRYPT_GNUC 1
 #else
+    #error Unsupported compiler
+#endif
 
-    #error Unknown compiler
+#if SYMCRYPT_MS_VC
+
+// This should go somewhere else. Same in the other #if branches.
+#define SYMCRYPT_ANYSIZE_ARRAY               1
+#define SYMCRYPT_NOINLINE __declspec(noinline)
+#define SYMCRYPT_CDECL __cdecl
+#define SYMCRYPT_FASTCALL __fastcall
+
+#define SYMCRYPT_UNALIGNED
+
+#elif SYMCRYPT_GNUC
+
+// Suppress the SAL annotations
+#include "symcrypt_no_sal.h"
+
+// Ignore the multi-character character constant warnings
+#pragma GCC diagnostic ignored "-Wmultichar"
+
+#define C_ASSERT(e)                 typedef char __C_ASSERT__[(e)?1:-1]
+#define SYMCRYPT_ANYSIZE_ARRAY               1
+#define FORCEINLINE                 static inline //__inline__ __attribute__ ((always_inline))
+#define SYMCRYPT_NOINLINE           __attribute__ ((noinline))
+#define SYMCRYPT_UNALIGNED
+#define SYMCRYPT_CDECL
+#define SYMCRYPT_FASTCALL           __attribute__((fastcall))
 
 #endif
 
@@ -70,8 +93,8 @@
 //
 // SYMCRYPT_ALIGN is the default alignment for the platform.
 // On platforms that have alignment restrictions the default alignment should be large enough that
-// an aligned BYTE * can be cast to a pointer to a UINT32 and be used. 
-// 
+// an aligned BYTE * can be cast to a pointer to a UINT32 and be used.
+//
 //
 // The SYMCRYPT_IGNORE_PLATFORM macro can be defined to switch off any platform-specific
 // optimizations and run just the C implementations.
@@ -91,47 +114,47 @@
 #define SYMCRYPT_CPU_ARM64          0
 #define SYMCRYPT_CPU_UNKNOWN        0
 
-#if defined( _X86_ ) && !defined ( SYMCRYPT_IGNORE_PLATFORM )
+#if (defined( _X86_ ) || defined( _M_IX86 ) || defined( __i386__ )) && !defined ( SYMCRYPT_IGNORE_PLATFORM )
 
-    #undef  SYMCRYPT_CPU_X86
-    #define SYMCRYPT_CPU_X86        1
+#undef  SYMCRYPT_CPU_X86
+#define SYMCRYPT_CPU_X86        1
 
-    #define SYMCRYPT_CALL           __fastcall
-    #define SYMCRYPT_ALIGN_VALUE    4
+#define SYMCRYPT_CALL           SYMCRYPT_FASTCALL
+#define SYMCRYPT_ALIGN_VALUE    4
 
 #ifndef _PREFAST_
 #pragma warning(push)
 #pragma warning(disable:4359)   // *** Alignment specifier is less than actual alignment
 #endif
 
-#elif defined( _AMD64_ ) && !defined ( SYMCRYPT_IGNORE_PLATFORM )
+#elif (defined( _ARM64_ ) || defined( _ARM64EC_ ) || defined( _M_ARM64 ) || defined( __aarch64__ )) && !defined( SYMCRYPT_IGNORE_PLATFORM )
 
-    #undef  SYMCRYPT_CPU_AMD64
-    #define SYMCRYPT_CPU_AMD64      1
+#undef  SYMCRYPT_CPU_ARM64
+#define SYMCRYPT_CPU_ARM64      1
+#define SYMCRYPT_CALL
+#define SYMCRYPT_ALIGN_VALUE    16
 
-    #define SYMCRYPT_CALL          
-    #define SYMCRYPT_ALIGN_VALUE    16
+#elif (defined( _AMD64_ ) || defined( _M_AMD64 ) || defined( __amd64__ )) && !defined ( SYMCRYPT_IGNORE_PLATFORM )
 
-#elif defined( _ARM64_ ) && !defined( SYMCRYPT_IGNORE_PLATFORM )
+#undef  SYMCRYPT_CPU_AMD64
+#define SYMCRYPT_CPU_AMD64      1
 
-    #undef  SYMCRYPT_CPU_ARM64
-    #define SYMCRYPT_CPU_ARM64      1
-    #define SYMCRYPT_CALL
-    #define SYMCRYPT_ALIGN_VALUE    16
+#define SYMCRYPT_CALL
+#define SYMCRYPT_ALIGN_VALUE    16
 
-#elif defined( _ARM_ ) && !defined( SYMCRYPT_IGNORE_PLATFORM )
+#elif (defined( _ARM_ ) || defined( _M_ARM ) || defined( __arm__ )) && !defined( SYMCRYPT_IGNORE_PLATFORM )
 
-    #undef  SYMCRYPT_CPU_ARM
-    #define SYMCRYPT_CPU_ARM        1
-    #define SYMCRYPT_CALL
-    #define SYMCRYPT_ALIGN_VALUE    8
+#undef  SYMCRYPT_CPU_ARM
+#define SYMCRYPT_CPU_ARM        1
+#define SYMCRYPT_CALL
+#define SYMCRYPT_ALIGN_VALUE    8
 
 #elif defined( SYMCRYPT_IGNORE_PLATFORM )
 
-    #undef  SYMCRYPT_CPU_UNKNOWN
-    #define SYMCRYPT_CPU_UNKNOWN    1
-    #define SYMCRYPT_CALL
-    #define SYMCRYPT_ALIGN_VALUE    4
+#undef  SYMCRYPT_CPU_UNKNOWN
+#define SYMCRYPT_CPU_UNKNOWN    1
+#define SYMCRYPT_CALL
+#define SYMCRYPT_ALIGN_VALUE    16
 
 #ifndef _PREFAST_
 #pragma warning(push)
@@ -140,25 +163,151 @@
 
 #else
 
-    #error Unknown CPU platform
+#error Unknown CPU platform
 
 #endif   // SYMCRYPT_CALL platforms switch
 
-#define SYMCRYPT_ALIGN  __declspec(align(SYMCRYPT_ALIGN_VALUE))
+
+//
+// Datatypes used by the SymCrypt library. This ensures compatibility
+// with multiple environments, such as Windows, iOS, and Android.
+//
+
+#if SYMCRYPT_MS_VC
+
+    //
+    // Types included in intsafe.h:
+    //      BYTE,
+    //      INT16, UINT16,
+    //      INT32, UINT32,
+    //      INT64, UINT64,
+    //      UINT_PTR
+    // and macro:
+    //      UINT32_MAX
+    //
+#include <intsafe.h>
+
+#else
+
+#include <stdint.h>
+
+typedef uint8_t         BYTE;
+
+#ifndef UINT32_MAX
+#define UINT32_MAX      (0xffffffff)
+#endif
+
+#ifndef TRUE
+#define TRUE            0x01
+#endif
+
+#ifndef FALSE
+#define FALSE           0x00
+#endif
+
+// Size_t
+typedef size_t          SIZE_T;
+
+#ifndef SIZE_T_MAX
+#define SIZE_T_MAX      SIZE_MAX
+#endif
+
+typedef long INT_PTR, *PINT_PTR;
+typedef unsigned long UINT_PTR, *PUINT_PTR;
+
+typedef long LONG_PTR, *PLONG_PTR;
+typedef unsigned long ULONG_PTR, *PULONG_PTR;
+
+typedef int                 BOOL;
+typedef unsigned int        UINT;
+typedef unsigned long       ULONG;
+
+typedef int8_t              INT8, *PINT8;
+typedef int16_t             INT16, *PINT16;
+typedef int32_t             INT32, *PINT32;
+typedef int64_t             INT64, *PINT64;
+typedef uint8_t             UINT8, *PUINT8;
+typedef uint16_t            UINT16, *PUINT16;
+typedef uint32_t            UINT32, *PUINT32;
+typedef uint64_t            UINT64, *PUINT64;
+
+typedef uint32_t            ULONG32, *PULONG32;
+
+// minwindef.h
+typedef char CHAR;
+
+#endif //WIN32
+
+#include <stddef.h>
+
+//
+// Pointer types
+//
+typedef BYTE *          PBYTE;
+typedef const BYTE *    PCBYTE;
+
+typedef UINT16 *        PUINT16;
+typedef const UINT16 *  PCUINT16;
+
+typedef UINT32 *        PUINT32;
+typedef const UINT32 *  PCUINT32;
+
+typedef UINT64 *        PUINT64;
+typedef const UINT64 *  PCUINT64;
+
+// Void
+
+#ifndef VOID
+#define VOID void
+#endif
+
+typedef void *          PVOID;
+typedef const void *    PCVOID;
+
+// winnt.h
+typedef BYTE  BOOLEAN;
+
+// Useful macros for structs
+#define SYMCRYPT_FIELD_OFFSET(type, field)      (offsetof(type, field))
+#define SYMCRYPT_FIELD_SIZE(type, field)        (sizeof( ((type *)0)->field ))
+
+#if SYMCRYPT_MS_VC
+
+#ifndef FORCEINLINE
+#if (_MSC_VER >= 1200)
+#define FORCEINLINE __forceinline
+#else
+#define FORCEINLINE __inline
+#endif
+#endif
+
+#else
+
+#define FORCEINLINE static inline
+
+#endif
+
 C_ASSERT( (SYMCRYPT_ALIGN_VALUE & (SYMCRYPT_ALIGN_VALUE - 1 )) == 0 );
 #define SYMCRYPT_ALIGN_UP( _p ) ((PBYTE) ( ((UINT_PTR) (_p) + SYMCRYPT_ALIGN_VALUE - 1) & ~(SYMCRYPT_ALIGN_VALUE - 1 ) ) )
 
-//
-// Some functions may not be inlined to prevent the compiler form creating
-// additional crypto algorithm implementations that would require their own
-// FIPS selftest.
-// The SYMCRYPT_NOINLINE macro allows easy porting to other environments.
-//
-#define SYMCRYPT_NOINLINE   DECLSPEC_NOINLINE
+#if SYMCRYPT_MS_VC
+    #define SYMCRYPT_ALIGN_AT(alignment)                 __declspec(align(alignment))
+    #define SYMCRYPT_WEAK_SYMBOL
+#elif SYMCRYPT_GNUC
+    #define SYMCRYPT_ALIGN_AT(alignment)                 __attribute__((aligned(alignment)))
+    #define SYMCRYPT_WEAK_SYMBOL                         __attribute__((weak))
+#else
+    #define SYMCRYPT_ALIGN_AT(alignment)
+    #define SYMCRYPT_WEAK_SYMBOL
+#endif
+#define SYMCRYPT_ALIGN_TYPE_AT(typename, alignment)  typename SYMCRYPT_ALIGN_AT(alignment)
+#define SYMCRYPT_ALIGN          SYMCRYPT_ALIGN_AT(SYMCRYPT_ALIGN_VALUE)
+#define SYMCRYPT_ALIGN_STRUCT   SYMCRYPT_ALIGN_TYPE_AT(struct, SYMCRYPT_ALIGN_VALUE)
+#define SYMCRYPT_ALIGN_UNION    SYMCRYPT_ALIGN_TYPE_AT(union, SYMCRYPT_ALIGN_VALUE)
+
 
 #define SYMCRYPT_MAX( _a, _b )  ((_a)>(_b)?(_a):(_b))
 #define SYMCRYPT_MIN( _a, _b )  ((_a)<(_b)?(_a):(_b))
-
 
 #if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
 //
@@ -174,19 +323,19 @@ C_ASSERT( (SYMCRYPT_ALIGN_VALUE & (SYMCRYPT_ALIGN_VALUE - 1 )) == 0 );
 //
 // To provide quick error detection we have magic values in all
 // our data structures, but only in CHKed builds.
-// Our magic value depends on the address of the structure. 
+// Our magic value depends on the address of the structure.
 // This has the advantage that we detect blind memcpy's of our data structures.
 // Memcpy is not supported as it limits what the library is allowed to do.
 // Where needed the library provides for copy functions of its internal data structures.
 //
-#if defined( DBG )
+#if SYMCRYPT_DEBUG
     #define SYMCRYPT_MAGIC_ENABLED
 #endif
 
 #if defined(SYMCRYPT_MAGIC_ENABLED )
 
 #define SYMCRYPT_MAGIC_FIELD        SIZE_T   magic;
-#define SYMCRYPT_MAGIC_VALUE( p )   ((SIZE_T) p + 'S1mv' + SYMCRYPT_CODE_VERSION)
+#define SYMCRYPT_MAGIC_VALUE( p )   ((SIZE_T) p + 'S1mv' + SYMCRYPT_API_VERSION)
 
 
 #define SYMCRYPT_SET_MAGIC( p )     {(p)->magic = SYMCRYPT_MAGIC_VALUE( p );}
@@ -196,15 +345,15 @@ C_ASSERT( (SYMCRYPT_ALIGN_VALUE & (SYMCRYPT_ALIGN_VALUE - 1 )) == 0 );
 #else
 
 //
-// We define the magic field even for FRE builds, because we get too many 
+// We define the magic field even for FRE builds, because we get too many
 // hard-to-debug problems with people who accidentally mix FRE headers with CHKed libraries,
 // or the other way around.
 // E.g. BitLocker only publishes the FRE version of their library, and building a CHKed binary with
 // that FRE lib crashes
 //
 
-#define SYMCRYPT_MAGIC_FIELD        SIZE_T   magic;     
-#define SYMCRYPT_SET_MAGIC( p ) 
+#define SYMCRYPT_MAGIC_FIELD        SIZE_T   magic;
+#define SYMCRYPT_SET_MAGIC( p )
 #define SYMCRYPT_CHECK_MAGIC( p )
 #define SYMCRYPT_WIPE_MAGIC( p )
 
@@ -212,7 +361,12 @@ C_ASSERT( (SYMCRYPT_ALIGN_VALUE & (SYMCRYPT_ALIGN_VALUE - 1 )) == 0 );
 
 //
 // CPU feature detection infrastructure
-// 
+//
+
+#if SYMCRYPT_GNUC
+    // Forward declarations for CPUID intrinsic replacements
+    void __cpuidex(int CPUInfo[4], int InfoType, int ECXValue);
+#endif
 
 #if SYMCRYPT_CPU_ARM || SYMCRYPT_CPU_ARM64
 
@@ -220,19 +374,19 @@ C_ASSERT( (SYMCRYPT_ALIGN_VALUE & (SYMCRYPT_ALIGN_VALUE - 1 )) == 0 );
 #define SYMCRYPT_CPU_FEATURE_NEON_AES       0x02
 #define SYMCRYPT_CPU_FEATURE_NEON_PMULL     0x04
 #define SYMCRYPT_CPU_FEATURE_NEON_SHA256    0x08
-#define SYMCRYPT_CPU_FEATURE_NEON_SHA1      0x10
 
 #elif SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
 
 //
 // We keep the most commonly tested bits in the least significant byte, to make it easier for the compiler to optimize
-//
+// There is a many to one relationship between CPUID feature flags and SYMCRYPT_CPU_FEATURE_XXX bits
+// since a SYMCRYPT_CPU_FEATURE_XXX could require multiple CPUID features.
 
 #define SYMCRYPT_CPU_FEATURE_SSE2               0x0001          // includes SSE, SSE2
 #define SYMCRYPT_CPU_FEATURE_SSSE3              0x0002          // includes SSE, SSE2, SSE3, SSSE3
 #define SYMCRYPT_CPU_FEATURE_AESNI              0x0004
 #define SYMCRYPT_CPU_FEATURE_PCLMULQDQ          0x0008
-#define SYMCRYPT_CPU_FEATURE_AVX2               0x0010          // includes AVX, AVX2
+#define SYMCRYPT_CPU_FEATURE_AVX2               0x0010          // includes AVX, AVX2 - also indicates support for saving/restoring Ymm registers
 #define SYMCRYPT_CPU_FEATURE_SAVEXMM_NOFAIL     0x0020          // if SymCryptSaveXmm() will never fail
 #define SYMCRYPT_CPU_FEATURE_SHANI              0x0040
 #define SYMCRYPT_CPU_FEATURE_BMI2               0x0080          // MULX, RORX, SARX, SHLX, SHRX
@@ -240,6 +394,11 @@ C_ASSERT( (SYMCRYPT_ALIGN_VALUE & (SYMCRYPT_ALIGN_VALUE - 1 )) == 0 );
 #define SYMCRYPT_CPU_FEATURE_ADX                0x0100          // ADCX, ADOX
 #define SYMCRYPT_CPU_FEATURE_RDRAND             0x0200
 #define SYMCRYPT_CPU_FEATURE_RDSEED             0x0400
+#define SYMCRYPT_CPU_FEATURE_VAES               0x0800          // support for VAES and VPCLMULQDQ (may only be supported on Ymm registers (i.e. Zen3))
+#define SYMCRYPT_CPU_FEATURE_AVX512             0x1000          // includes F, VL, DQ, BW (VL allows AVX-512 instructions to be used on Xmm and Ymm registers)
+                                                                // also indicates support for saving/restoring additional AVX-512 state
+
+#define SYMCRYPT_CPU_FEATURE_CMPXCHG16B         0x2000          // Compare and Swap 128b value
 
 #endif
 
@@ -255,11 +414,91 @@ typedef UINT32 SYMCRYPT_CPU_FEATURES;
 
 extern SYMCRYPT_CPU_FEATURES g_SymCryptCpuFeaturesNotPresent;
 
-SYMCRYPT_CPU_FEATURES 
+SYMCRYPT_CPU_FEATURES
 SYMCRYPT_CALL
-SymCryptCpuFeaturesNeverPresent();   
+SymCryptCpuFeaturesNeverPresent(void);
 
 #define SYMCRYPT_CPU_FEATURES_PRESENT( x )   ( ((x) & SymCryptCpuFeaturesNeverPresent()) == 0 && ( (x) & g_SymCryptCpuFeaturesNotPresent ) == 0 )
+
+//
+// VOLATILE MEMORY ACCESS
+//
+// These macros are used to explicitly handle volatile memory access independent of compiler settings.
+// If volatile memory is accessed directly without using the appropriate macro, MSVC may emit warning
+// C4746, because the volatile semantics depend on the value of the /volatile flag, which can result in
+// undesired hardware memory barriers that impact performance.
+//
+// More info:
+// https://docs.microsoft.com/en-us/cpp/error-messages/compiler-warnings/compiler-warning-c4746?view=msvc-170
+// https://docs.microsoft.com/en-us/cpp/build/reference/volatile-volatile-keyword-interpretation?view=msvc-170
+//
+
+#if SYMCRYPT_MS_VC  // Microsoft VC++ Compiler
+
+    #if SYMCRYPT_CPU_ARM || SYMCRYPT_CPU_ARM64
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ8( _p )    ( __iso_volatile_load8( (const volatile char*)(_p) ) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ16( _p )   ( __iso_volatile_load16( (const volatile short*)(_p) ) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ32( _p )   ( __iso_volatile_load32( (const volatile int*)(_p) ) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ64( _p )   ( __iso_volatile_load64( (const volatile __int64*)(_p) ) )
+
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE8( _p, _v )  ( __iso_volatile_store8( (volatile char*)(_p), (_v) ) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE16( _p, _v ) ( __iso_volatile_store16( (volatile short*)(_p), (_v) ) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE32( _p, _v ) ( __iso_volatile_store32( (volatile int*)(_p), (_v) ) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE64( _p, _v ) ( __iso_volatile_store64( (volatile __int64*)(_p), (_v) ) )
+    #elif SYMCRYPT_CPU_X86 || SYMCRYPT_CPU_AMD64
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ8( _p )    ( *((const volatile BYTE*)  (_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ16( _p )   ( *((const volatile UINT16*)(_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ32( _p )   ( *((const volatile UINT32*)(_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ64( _p )   ( *((const volatile UINT64*)(_p)) )
+
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE8( _p, _v )  ( *((volatile BYTE*)  (_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE16( _p, _v ) ( *((volatile UINT16*)(_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE32( _p, _v ) ( *((volatile UINT32*)(_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE64( _p, _v ) ( *((volatile UINT64*)(_p)) = (_v) )
+    #else // Temporary workaround for CMake compilation issues on Windows. Assume X86/ADM64.
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ8( _p )    ( *((const volatile BYTE*)  (_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ16( _p )   ( *((const volatile UINT16*)(_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ32( _p )   ( *((const volatile UINT32*)(_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ64( _p )   ( *((const volatile UINT64*)(_p)) )
+
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE8( _p, _v )  ( *((volatile BYTE*)  (_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE16( _p, _v ) ( *((volatile UINT16*)(_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE32( _p, _v ) ( *((volatile UINT32*)(_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE64( _p, _v ) ( *((volatile UINT64*)(_p)) = (_v) )
+    #endif
+
+#elif SYMCRYPT_GNUC
+
+    #if !SYMCRYPT_CPU_ARM
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ8( _p )    ( *((const volatile BYTE*)  (_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ16( _p )   ( *((const volatile UINT16*)(_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ32( _p )   ( *((const volatile UINT32*)(_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ64( _p )   ( *((const volatile UINT64*)(_p)) )
+
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE8( _p, _v )  ( *((volatile BYTE*)  (_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE16( _p, _v ) ( *((volatile UINT16*)(_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE32( _p, _v ) ( *((volatile UINT32*)(_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE64( _p, _v ) ( *((volatile UINT64*)(_p)) = (_v) )
+    #else // SYMCRYPT_CPU_ARM
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ8( _p )    ( *((const volatile BYTE*)  (_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ16( _p )   ( *((const volatile UINT16*)(_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ32( _p )   ( *((const volatile UINT32*)(_p)) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_READ64( p ) ( (UINT64)SYMCRYPT_INTERNAL_VOLATILE_READ32(&((PBYTE)p)[4]) << 32 |  SYMCRYPT_INTERNAL_VOLATILE_READ32(&((PBYTE)p)[0]) )
+
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE8( _p, _v )  ( *((volatile BYTE*)  (_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE16( _p, _v ) ( *((volatile UINT16*)(_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE32( _p, _v ) ( *((volatile UINT32*)(_p)) = (_v) )
+        #define SYMCRYPT_INTERNAL_VOLATILE_WRITE64( p, x ) { \
+            SYMCRYPT_INTERNAL_VOLATILE_WRITE32( &((PBYTE)p)[0], (UINT32)((x)    ) );\
+            SYMCRYPT_INTERNAL_VOLATILE_WRITE32( &((PBYTE)p)[4], (UINT32)(((UINT64)(x))>>32) );\
+            }
+    #endif
+
+#else
+
+    #error Unknown compiler
+
+#endif
 
 //
 // FORCED MEMORY ACCESS
@@ -270,40 +509,19 @@ SymCryptCpuFeaturesNeverPresent();
 // They provide no other memory ordering requirements, so there are no acquire/release
 // semantics, memory barriers, etc.
 //
-// For Windows (MS_VC compiler) we use the provided by the OS functions.
-//
 // The generic versions are implemented with a volatile access, but that is inefficient on some platforms
 // because it might introduce memory ordering requirements.
 //
 
-#if SYMCRYPT_MS_VC  // Microsoft VC++ Compiler
-    #define SYMCRYPT_INTERNAL_FORCE_READ8( _p )    ((BYTE   ) (ReadNoFence8 ( (volatile CHAR   *)(_p) )))
-    #define SYMCRYPT_INTERNAL_FORCE_READ16( _p )   ((UINT16 ) (ReadNoFence16( (volatile SHORT  *)(_p) )))
-    #define SYMCRYPT_INTERNAL_FORCE_READ32( _p )   ((UINT32 ) (ReadNoFence  ( (volatile LONG   *)(_p) )))
-    #define SYMCRYPT_INTERNAL_FORCE_READ64( _p )   ((UINT64 ) (ReadNoFence64( (volatile LONG64 *)(_p) )))
+#define SYMCRYPT_INTERNAL_FORCE_READ8( _p )    SYMCRYPT_INTERNAL_VOLATILE_READ8( _p )
+#define SYMCRYPT_INTERNAL_FORCE_READ16( _p )   SYMCRYPT_INTERNAL_VOLATILE_READ16( _p )
+#define SYMCRYPT_INTERNAL_FORCE_READ32( _p )   SYMCRYPT_INTERNAL_VOLATILE_READ32( _p )
+#define SYMCRYPT_INTERNAL_FORCE_READ64( _p )   SYMCRYPT_INTERNAL_VOLATILE_READ64( _p )
 
-    #define SYMCRYPT_INTERNAL_FORCE_WRITE8( _p, _v )  (WriteNoFence8 ( (volatile CHAR   *)(_p), (CHAR  )(_v) ))
-    #define SYMCRYPT_INTERNAL_FORCE_WRITE16( _p, _v ) (WriteNoFence16( (volatile SHORT  *)(_p), (SHORT )(_v) ))
-    #define SYMCRYPT_INTERNAL_FORCE_WRITE32( _p, _v ) (WriteNoFence  ( (volatile LONG   *)(_p), (LONG  )(_v) ))
-    #define SYMCRYPT_INTERNAL_FORCE_WRITE64( _p, _v ) (WriteNoFence64( (volatile LONG64 *)(_p), (LONG64)(_v) ))
-    
-#elif SYMCRYPT_APPLE_CC  
-
-    #define SYMCRYPT_INTERNAL_FORCE_READ8( _p )    ( *((const volatile BYTE*)  (_p)) )
-    #define SYMCRYPT_INTERNAL_FORCE_READ16( _p )   ( *((const volatile UINT16*)(_p)) )
-    #define SYMCRYPT_INTERNAL_FORCE_READ32( _p )   ( *((const volatile UINT32*)(_p)) )
-    #define SYMCRYPT_INTERNAL_FORCE_READ64( _p )   ( *((const volatile UINT64*)(_p)) )
-
-    #define SYMCRYPT_INTERNAL_FORCE_WRITE8( _p, _v )  ( *((volatile BYTE*)  (_p)) = (_v) )
-    #define SYMCRYPT_INTERNAL_FORCE_WRITE16( _p, _v ) ( *((volatile UINT16*)(_p)) = (_v) )
-    #define SYMCRYPT_INTERNAL_FORCE_WRITE32( _p, _v ) ( *((volatile UINT32*)(_p)) = (_v) )
-    #define SYMCRYPT_INTERNAL_FORCE_WRITE64( _p, _v ) ( *((volatile UINT64*)(_p)) = (_v) )
-    
-#else
-    
-    #error Unknown compiler
-    
-#endif
+#define SYMCRYPT_INTERNAL_FORCE_WRITE8( _p, _v )  SYMCRYPT_INTERNAL_VOLATILE_WRITE8( _p, _v )
+#define SYMCRYPT_INTERNAL_FORCE_WRITE16( _p, _v ) SYMCRYPT_INTERNAL_VOLATILE_WRITE16( _p, _v )
+#define SYMCRYPT_INTERNAL_FORCE_WRITE32( _p, _v ) SYMCRYPT_INTERNAL_VOLATILE_WRITE32( _p, _v )
+#define SYMCRYPT_INTERNAL_FORCE_WRITE64( _p, _v ) SYMCRYPT_INTERNAL_VOLATILE_WRITE64( _p, _v )
 
 //
 // FIXED ENDIANNESS ACCESS
@@ -312,16 +530,26 @@ SymCryptCpuFeaturesNeverPresent();
 // We do this by platform because it affected by both endianness and alignment requirements
 // The p pointer is always a pointer to BYTE
 //
-#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_ARM | SYMCRYPT_CPU_ARM64 
+#if SYMCRYPT_MS_VC  // Microsoft VC++ Compiler
+    #define SYMCRYPT_BSWAP16( x ) _byteswap_ushort(x)
+    #define SYMCRYPT_BSWAP32( x ) _byteswap_ulong(x)
+    #define SYMCRYPT_BSWAP64( x ) _byteswap_uint64(x)
+#elif SYMCRYPT_GNUC
+    #define SYMCRYPT_BSWAP16( x ) __builtin_bswap16(x)
+    #define SYMCRYPT_BSWAP32( x ) __builtin_bswap32(x)
+    #define SYMCRYPT_BSWAP64( x ) __builtin_bswap64(x)
+#endif
 
-#define SYMCRYPT_BSWAP16( x ) _byteswap_ushort(x)
-#define SYMCRYPT_BSWAP32( x ) _byteswap_ulong(x)
-#define SYMCRYPT_BSWAP64( x ) _byteswap_uint64(x)
+#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_ARM64
 
 
 //
 // X86, AMD64, ARM, and ARM64 have no alignment restrictions, and are little-endian.
 // We do straight store/loads with BSWAPs where required.
+// This technically relies upon on undefined behavior, as we assume the compiler will translate
+// operations on unaligned pointers to 2, 4, and 8 bytes types to appropriately unaligned store/load
+// instructions on these platforms (not just in these macros). This works for all compilers we
+// currently use.
 //
 #define SYMCRYPT_INTERNAL_LOAD_MSBFIRST16( p ) SYMCRYPT_BSWAP16( *((UINT16 *)(p)) )
 #define SYMCRYPT_INTERNAL_LOAD_LSBFIRST16( p )                 ( *((UINT16 *)(p)) )
@@ -337,6 +565,34 @@ SymCryptCpuFeaturesNeverPresent();
 #define SYMCRYPT_INTERNAL_STORE_MSBFIRST64( p, x ) ( *(UINT64 *)(p) = SYMCRYPT_BSWAP64(x) )
 #define SYMCRYPT_INTERNAL_STORE_LSBFIRST64( p, x ) ( *(UINT64 *)(p) =                 (x) )
 
+#elif SYMCRYPT_CPU_ARM
+
+//
+// Only 64 bit accesses need to be aligned.
+//
+#define SYMCRYPT_INTERNAL_LOAD_MSBFIRST16( p ) SYMCRYPT_BSWAP16( *((UINT16 *)(p)) )
+#define SYMCRYPT_INTERNAL_LOAD_LSBFIRST16( p )                 ( *((UINT16 *)(p)) )
+#define SYMCRYPT_INTERNAL_LOAD_MSBFIRST32( p ) SYMCRYPT_BSWAP32( *((UINT32 *)(p)) )
+#define SYMCRYPT_INTERNAL_LOAD_LSBFIRST32( p )                 ( *((UINT32 *)(p)) )
+
+#define SYMCRYPT_INTERNAL_LOAD_MSBFIRST64( p ) ( (UINT64)SYMCRYPT_INTERNAL_LOAD_MSBFIRST32(&((PBYTE)p)[0]) << 32 | SYMCRYPT_INTERNAL_LOAD_MSBFIRST32(&((PBYTE)p)[4]) )
+#define SYMCRYPT_INTERNAL_LOAD_LSBFIRST64( p ) ( (UINT64)SYMCRYPT_INTERNAL_LOAD_LSBFIRST32(&((PBYTE)p)[4]) << 32 | SYMCRYPT_INTERNAL_LOAD_LSBFIRST32(&((PBYTE)p)[0]) )
+
+
+
+#define SYMCRYPT_INTERNAL_STORE_MSBFIRST16( p, x ) ( *(UINT16 *)(p) = SYMCRYPT_BSWAP16(x) )
+#define SYMCRYPT_INTERNAL_STORE_LSBFIRST16( p, x ) ( *(UINT16 *)(p) =                 (x) )
+#define SYMCRYPT_INTERNAL_STORE_MSBFIRST32( p, x ) ( *(UINT32 *)(p) = SYMCRYPT_BSWAP32(x) )
+#define SYMCRYPT_INTERNAL_STORE_LSBFIRST32( p, x ) ( *(UINT32 *)(p) =                 (x) )
+#define SYMCRYPT_INTERNAL_STORE_MSBFIRST64( p, x ) { \
+    SYMCRYPT_INTERNAL_STORE_MSBFIRST32( &((PBYTE)p)[0],(UINT32)(((UINT64)(x))>>32) );\
+    SYMCRYPT_INTERNAL_STORE_MSBFIRST32( &((PBYTE)p)[4],(UINT32)(x));\
+    }
+
+#define SYMCRYPT_INTERNAL_STORE_LSBFIRST64( p, x ) { \
+    SYMCRYPT_INTERNAL_STORE_LSBFIRST32( &((PBYTE)p)[0], (UINT32)((x)    ) );\
+    SYMCRYPT_INTERNAL_STORE_LSBFIRST32( &((PBYTE)p)[4], (UINT32)(((UINT64)(x))>>32) );\
+    }
 #else // unknown platform
 
 //
@@ -344,45 +600,45 @@ SymCryptCpuFeaturesNeverPresent();
 // generic case.
 // So far these macros have not been fully tested
 //
-#define SYMCRYPT_INTERNAL_LOAD_MSBFIRST16( p ) ( (UINT16)((p)[0] << 8 | (p)[1]       ) )
-#define SYMCRYPT_INTERNAL_LOAD_LSBFIRST16( p ) ( (UINT16)((p)[0]      | (p)[1] <<  8 ) )
-#define SYMCRYPT_INTERNAL_LOAD_MSBFIRST32( p ) ( (UINT32)((p)[0] << 24 | (p)[1] << 16 | (p)[2] <<  8 | (p)[3]       ) )
-#define SYMCRYPT_INTERNAL_LOAD_LSBFIRST32( p ) ( (UINT32)((p)[0]       | (p)[1] <<  8 | (p)[2] << 16 | (p)[3] << 24 ) )
-#define SYMCRYPT_INTERNAL_LOAD_MSBFIRST64( p ) ( (UINT64)SYMCRYPT_INTERNAL_LOAD_MSBFIRST32(&(p)[0]) << 32 | SYMCRYPT_INTERNAL_LOAD_MSBFIRST32(&(p)[4]) )
-#define SYMCRYPT_INTERNAL_LOAD_LSBFIRST64( p ) ( (UINT64)SYMCRYPT_INTERNAL_LOAD_LSBFIRST32(&(p)[4]) << 32 | SYMCRYPT_INTERNAL_LOAD_LSBFIRST32(&(p)[0]) )
+#define SYMCRYPT_INTERNAL_LOAD_MSBFIRST16( p ) ( ((UINT16)((PBYTE)p)[0]) << 8 | ((PBYTE)p)[1] )
+#define SYMCRYPT_INTERNAL_LOAD_LSBFIRST16( p ) ( ((UINT16)((PBYTE)p)[1]) << 8 | ((PBYTE)p)[0] )
+#define SYMCRYPT_INTERNAL_LOAD_MSBFIRST32( p ) ( (UINT32)SYMCRYPT_INTERNAL_LOAD_MSBFIRST16(&((PBYTE)p)[0]) << 16 | SYMCRYPT_INTERNAL_LOAD_MSBFIRST16(&((PBYTE)p)[2]) )
+#define SYMCRYPT_INTERNAL_LOAD_LSBFIRST32( p ) ( (UINT32)SYMCRYPT_INTERNAL_LOAD_LSBFIRST16(&((PBYTE)p)[2]) << 16 | SYMCRYPT_INTERNAL_LOAD_LSBFIRST16(&((PBYTE)p)[0]) )
+#define SYMCRYPT_INTERNAL_LOAD_MSBFIRST64( p ) ( (UINT64)SYMCRYPT_INTERNAL_LOAD_MSBFIRST32(&((PBYTE)p)[0]) << 32 | SYMCRYPT_INTERNAL_LOAD_MSBFIRST32(&((PBYTE)p)[4]) )
+#define SYMCRYPT_INTERNAL_LOAD_LSBFIRST64( p ) ( (UINT64)SYMCRYPT_INTERNAL_LOAD_LSBFIRST32(&((PBYTE)p)[4]) << 32 | SYMCRYPT_INTERNAL_LOAD_LSBFIRST32(&((PBYTE)p)[0]) )
 
 #define SYMCRYPT_INTERNAL_STORE_MSBFIRST16( p, x ) { \
-    (p)[0] = (BYTE)((x)>> 8);\
-    (p)[1] = (BYTE)((x)    );\
+    ((PBYTE)p)[0] = (BYTE)((x)>> 8);\
+    ((PBYTE)p)[1] = (BYTE)((x)    );\
     }
 
 #define SYMCRYPT_INTERNAL_STORE_LSBFIRST16( p, x ) { \
-    (p)[0] = (BYTE)((x)    );\
-    (p)[1] = (BYTE)((x)>> 8);\
+    ((PBYTE)p)[0] = (BYTE)((x)    );\
+    ((PBYTE)p)[1] = (BYTE)((x)>> 8);\
     }
 
 #define SYMCRYPT_INTERNAL_STORE_MSBFIRST32( p, x ) { \
-    (p)[0] = (BYTE)((x)>>24);\
-    (p)[1] = (BYTE)((x)>>16);\
-    (p)[2] = (BYTE)((x)>> 8);\
-    (p)[3] = (BYTE)((x)    );\
+    ((PBYTE)p)[0] = (BYTE)((x)>>24);\
+    ((PBYTE)p)[1] = (BYTE)((x)>>16);\
+    ((PBYTE)p)[2] = (BYTE)((x)>> 8);\
+    ((PBYTE)p)[3] = (BYTE)((x)    );\
     }
 
 #define SYMCRYPT_INTERNAL_STORE_LSBFIRST32( p, x ) { \
-    (p)[0] = (BYTE)((x)    );\
-    (p)[1] = (BYTE)((x)>> 8);\
-    (p)[2] = (BYTE)((x)>>16);\
-    (p)[3] = (BYTE)((x)>>24);\
+    ((PBYTE)p)[0] = (BYTE)((x)    );\
+    ((PBYTE)p)[1] = (BYTE)((x)>> 8);\
+    ((PBYTE)p)[2] = (BYTE)((x)>>16);\
+    ((PBYTE)p)[3] = (BYTE)((x)>>24);\
     }
 
 #define SYMCRYPT_INTERNAL_STORE_MSBFIRST64( p, x ) { \
-    SYMCRYPT_INTERNAL_STORE_MSBFIRST32( &(p)[0],(UINT32)(((UINT64)(x))>>32) );\
-    SYMCRYPT_INTERNAL_STORE_MSBFIRST32( &(p)[4],(UINT32)(x));\
+    SYMCRYPT_INTERNAL_STORE_MSBFIRST32( &((PBYTE)p)[0],(UINT32)(((UINT64)(x))>>32) );\
+    SYMCRYPT_INTERNAL_STORE_MSBFIRST32( &((PBYTE)p)[4],(UINT32)(x));\
     }
 
 #define SYMCRYPT_INTERNAL_STORE_LSBFIRST64( p, x ) { \
-    SYMCRYPT_INTERNAL_STORE_LSBFIRST32( &(p)[0], (UINT32)((x)    ) );\
-    SYMCRYPT_INTERNAL_STORE_LSBFIRST32( &(p)[4], (UINT32)(((UINT64)(x))>>32) );\
+    SYMCRYPT_INTERNAL_STORE_LSBFIRST32( &((PBYTE)p)[0], (UINT32)((x)    ) );\
+    SYMCRYPT_INTERNAL_STORE_LSBFIRST32( &((PBYTE)p)[4], (UINT32)(((UINT64)(x))>>32) );\
     }
 
 #endif // platform switch for load/store macros
@@ -392,7 +648,7 @@ SymCryptCpuFeaturesNeverPresent();
 //  INTERNAL DATA STRUCTURES
 //==============================================================================================
 //
-// Note: we don not use the symbolic names like SYMCRYPT_SHA1_INPUT_BLOCK_SIZE as this
+// Note: we do not use the symbolic names like SYMCRYPT_SHA1_INPUT_BLOCK_SIZE as this
 // file is included before that name is defined. Fixing that would make the public API header
 // file harder to read by moving the constant away from the associated functions, or forcing
 // the header file to use the struct name rather than the typedef. The current solution
@@ -410,7 +666,7 @@ typedef struct _SYMCRYPT_BLOCKCIPHER    SYMCRYPT_BLOCKCIPHER, *PSYMCRYPT_BLOCKCI
 typedef const SYMCRYPT_BLOCKCIPHER  * PCSYMCRYPT_BLOCKCIPHER;
 
 //
-// Note that blockSize must be <= 32 and must be a power of two. This is true for all the block ciphers 
+// Note that blockSize must be <= 32 and must be a power of two. This is true for all the block ciphers
 // implemented in SymCrypt.
 //
 
@@ -424,13 +680,13 @@ typedef const SYMCRYPT_BLOCKCIPHER  * PCSYMCRYPT_BLOCKCIPHER;
 // code are tightly coupled.
 //
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_COMMON_HASH_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_COMMON_HASH_STATE
 {
                     UINT32                          bytesInBuffer;
                     SYMCRYPT_MAGIC_FIELD
                     UINT64                          dataLengthL;            // lower part of msg length
                     UINT64                          dataLengthH;            // upper part of msg length
-    SYMCRYPT_ALIGN  BYTE                            buffer[ANYSIZE_ARRAY];  // Size depends on algorithm
+    SYMCRYPT_ALIGN  BYTE                            buffer[SYMCRYPT_ANYSIZE_ARRAY];  // Size depends on algorithm
     // ...
     // Chaining state                                       // type/location depends on algorithm
     //
@@ -447,7 +703,7 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_COMMON_HASH_STATE
 // but that would complicate the code and MD2 isn't important enough to add
 // extra complications.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_MD2_CHAINING_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_MD2_CHAINING_STATE
 {
     SYMCRYPT_ALIGN  BYTE    C[16];      // State for internal checksum computation
                     BYTE    X[48];      // State for actual hash chaining
@@ -456,7 +712,7 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_MD2_CHAINING_STATE
 //
 // MD2 hash computation state.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_MD2_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_MD2_STATE
 {
                     UINT32                          bytesInBuffer;
                     SYMCRYPT_MAGIC_FIELD
@@ -473,19 +729,19 @@ typedef const SYMCRYPT_MD2_STATE *PCSYMCRYPT_MD2_STATE;
 // Data structure that stores the state of an ongoing MD4 computation.
 // The buffer contains dataLength % 64 bytes of data.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_MD4_CHAINING_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_MD4_CHAINING_STATE
 {
     UINT32   H[4];
 } SYMCRYPT_MD4_CHAINING_STATE, *PSYMCRYPT_MD4_CHAINING_STATE;
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_MD4_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_MD4_STATE
 {
                     UINT32                          bytesInBuffer;
                     SYMCRYPT_MAGIC_FIELD
                     UINT64                          dataLengthL;            // lower part of msg length
                     UINT64                          dataLengthH;            // upper part of msg length
     SYMCRYPT_ALIGN  BYTE                            buffer[64];             // buffer to keep one input block in
-                    SYMCRYPT_MD4_CHAINING_STATE     chain;      // chaining state 
+                    SYMCRYPT_MD4_CHAINING_STATE     chain;      // chaining state
 } SYMCRYPT_MD4_STATE, *PSYMCRYPT_MD4_STATE;
 typedef const SYMCRYPT_MD4_STATE *PCSYMCRYPT_MD4_STATE;
 
@@ -496,20 +752,20 @@ typedef const SYMCRYPT_MD4_STATE *PCSYMCRYPT_MD4_STATE;
 // Data structure that stores the state of an ongoing MD5 computation.
 // The buffer contains dataLength % 64 bytes of data.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_MD5_CHAINING_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_MD5_CHAINING_STATE
 {
     UINT32   H[4];
 } SYMCRYPT_MD5_CHAINING_STATE, *PSYMCRYPT_MD5_CHAINING_STATE;
 
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_MD5_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_MD5_STATE
 {
                     UINT32                          bytesInBuffer;
                     SYMCRYPT_MAGIC_FIELD
                     UINT64                          dataLengthL;            // lower part of msg length
                     UINT64                          dataLengthH;            // upper part of msg length
     SYMCRYPT_ALIGN  BYTE                            buffer[64];             // buffer to keep one input block in
-                    SYMCRYPT_MD5_CHAINING_STATE     chain;      // chaining state 
+                    SYMCRYPT_MD5_CHAINING_STATE     chain;      // chaining state
 } SYMCRYPT_MD5_STATE, *PSYMCRYPT_MD5_STATE;
 typedef const SYMCRYPT_MD5_STATE *PCSYMCRYPT_MD5_STATE;
 
@@ -520,19 +776,19 @@ typedef const SYMCRYPT_MD5_STATE *PCSYMCRYPT_MD5_STATE;
 // Data structure that stores the state of an ongoing SHA1 computation.
 // The buffer contains dataLength % 64 bytes of data.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_SHA1_CHAINING_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA1_CHAINING_STATE
 {
     UINT32   H[5];
 } SYMCRYPT_SHA1_CHAINING_STATE, *PSYMCRYPT_SHA1_CHAINING_STATE;
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_SHA1_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA1_STATE
 {
                     UINT32                          bytesInBuffer;
                     SYMCRYPT_MAGIC_FIELD
                     UINT64                          dataLengthL;            // lower part of msg length
                     UINT64                          dataLengthH;            // upper part of msg length
     SYMCRYPT_ALIGN  BYTE                            buffer[64];             // buffer to keep one input block in
-                    SYMCRYPT_SHA1_CHAINING_STATE    chain;      // chaining state 
+                    SYMCRYPT_SHA1_CHAINING_STATE    chain;      // chaining state
 } SYMCRYPT_SHA1_STATE, *PSYMCRYPT_SHA1_STATE;
 typedef const SYMCRYPT_SHA1_STATE *PCSYMCRYPT_SHA1_STATE;
 
@@ -543,21 +799,38 @@ typedef const SYMCRYPT_SHA1_STATE *PCSYMCRYPT_SHA1_STATE;
 // Data structure that stores the state of an ongoing SHA256 computation.
 // The buffer contains dataLength % 64 bytes of data.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_SHA256_CHAINING_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA256_CHAINING_STATE
 {
     SYMCRYPT_ALIGN  UINT32   H[8];
 } SYMCRYPT_SHA256_CHAINING_STATE, * PSYMCRYPT_SHA256_CHAINING_STATE;
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_SHA256_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA256_STATE
 {
                     UINT32                          bytesInBuffer;
                     SYMCRYPT_MAGIC_FIELD
                     UINT64                          dataLengthL;            // lower part of msg length
                     UINT64                          dataLengthH;            // upper part of msg length
     SYMCRYPT_ALIGN  BYTE                            buffer[64];             // buffer to keep one input block in
-                    SYMCRYPT_SHA256_CHAINING_STATE  chain;      // chaining state 
+                    SYMCRYPT_SHA256_CHAINING_STATE  chain;      // chaining state
 } SYMCRYPT_SHA256_STATE, *PSYMCRYPT_SHA256_STATE;
 typedef const SYMCRYPT_SHA256_STATE *PCSYMCRYPT_SHA256_STATE;
+
+
+//
+// SYMCRYPT_SHA224_STATE
+//
+// This is identical to the SHA256 state.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA224_STATE
+{
+                    UINT32                          bytesInBuffer;
+                    SYMCRYPT_MAGIC_FIELD
+                    UINT64                          dataLengthL;            // lower part of msg length
+                    UINT64                          dataLengthH;            // upper part of msg length
+    SYMCRYPT_ALIGN  BYTE                            buffer[64];             // buffer to keep one input block in
+                    SYMCRYPT_SHA256_CHAINING_STATE  chain;      // chaining state
+} SYMCRYPT_SHA224_STATE, *PSYMCRYPT_SHA224_STATE;
+typedef const SYMCRYPT_SHA224_STATE *PCSYMCRYPT_SHA224_STATE;
 
 
 //
@@ -566,19 +839,19 @@ typedef const SYMCRYPT_SHA256_STATE *PCSYMCRYPT_SHA256_STATE;
 // Data structure that stores the state of an ongoing SHA512 computation.
 // The buffer contains dataLength % 128 bytes of data.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_SHA512_CHAINING_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA512_CHAINING_STATE
 {
     UINT64   H[8];
 } SYMCRYPT_SHA512_CHAINING_STATE, *PSYMCRYPT_SHA512_CHAINING_STATE;
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_SHA512_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA512_STATE
 {
                     UINT32                          bytesInBuffer;
                     SYMCRYPT_MAGIC_FIELD
                     UINT64                          dataLengthL;            // lower part of msg length
                     UINT64                          dataLengthH;            // upper part of msg length
     SYMCRYPT_ALIGN  BYTE                            buffer[128];            // buffer to keep one input block in
-                    SYMCRYPT_SHA512_CHAINING_STATE  chain;          // chaining state 
+                    SYMCRYPT_SHA512_CHAINING_STATE  chain;          // chaining state
 } SYMCRYPT_SHA512_STATE, *PSYMCRYPT_SHA512_STATE;
 typedef const SYMCRYPT_SHA512_STATE *PCSYMCRYPT_SHA512_STATE;
 
@@ -588,51 +861,339 @@ typedef const SYMCRYPT_SHA512_STATE *PCSYMCRYPT_SHA512_STATE;
 //
 // This is identical to the SHA512.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_SHA384_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA384_STATE
 {
     UINT32                          bytesInBuffer;
     SYMCRYPT_MAGIC_FIELD
     UINT64                          dataLengthL;            // lower part of msg length
     UINT64                          dataLengthH;            // upper part of msg length
-    SYMCRYPT_ALIGN  BYTE                            buffer[128];            // buffer to keep one input block in
+    SYMCRYPT_ALIGN  BYTE            buffer[128];            // buffer to keep one input block in
     SYMCRYPT_SHA512_CHAINING_STATE  chain;          // chaining state
 } SYMCRYPT_SHA384_STATE, *PSYMCRYPT_SHA384_STATE;
 typedef const SYMCRYPT_SHA384_STATE *PCSYMCRYPT_SHA384_STATE;
 
 
-// 
+//
+// SYMCRYPT_SHA512_224_STATE
+//
+// This is identical to the SHA512.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA512_224_STATE
+{
+    UINT32                          bytesInBuffer;
+    SYMCRYPT_MAGIC_FIELD
+    UINT64                          dataLengthL;            // lower part of msg length
+    UINT64                          dataLengthH;            // upper part of msg length
+    SYMCRYPT_ALIGN  BYTE            buffer[128];            // buffer to keep one input block in
+    SYMCRYPT_SHA512_CHAINING_STATE  chain;          // chaining state
+} SYMCRYPT_SHA512_224_STATE, *PSYMCRYPT_SHA512_224_STATE;
+typedef const SYMCRYPT_SHA512_224_STATE *PCSYMCRYPT_SHA512_224_STATE;
+
+
+//
+// SYMCRYPT_SHA512_256_STATE
+//
+// This is identical to the SHA512.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA512_256_STATE
+{
+    UINT32                          bytesInBuffer;
+    SYMCRYPT_MAGIC_FIELD
+    UINT64                          dataLengthL;            // lower part of msg length
+    UINT64                          dataLengthH;            // upper part of msg length
+    SYMCRYPT_ALIGN  BYTE            buffer[128];            // buffer to keep one input block in
+    SYMCRYPT_SHA512_CHAINING_STATE  chain;          // chaining state
+} SYMCRYPT_SHA512_256_STATE, *PSYMCRYPT_SHA512_256_STATE;
+typedef const SYMCRYPT_SHA512_256_STATE *PCSYMCRYPT_SHA512_256_STATE;
+
+
+//
+// SYMCRYPT_KECCAK_STATE
+//
+// Data structure that stores the state of an ongoing SHA-3 derived algorithm computation.
+//
+
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_KECCAK_STATE
+{
+    SYMCRYPT_ALIGN  UINT64  state[25];      // state for Keccak-f[1600] permutation
+    UINT32                  inputBlockSize; // rate
+    UINT32                  stateIndex;     // position in the state for next merge/extract operation
+    UINT8                   paddingValue;   // Keccak padding value
+    BOOLEAN                 squeezeMode;    // denotes whether the state is in squeeze mode
+} SYMCRYPT_KECCAK_STATE, *PSYMCRYPT_KECCAK_STATE;
+typedef const SYMCRYPT_KECCAK_STATE *PCSYMCRYPT_KECCAK_STATE;
+
+//
+// SYMCRYPT_SHA3_224_STATE
+//
+// Data structure that stores the state of an ongoing SHA3-224 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA3_224_STATE
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_SHA3_224_STATE, * PSYMCRYPT_SHA3_224_STATE;
+typedef const SYMCRYPT_SHA3_224_STATE* PCSYMCRYPT_SHA3_224_STATE;
+
+//
+// SYMCRYPT_SHA3_256_STATE
+//
+// Data structure that stores the state of an ongoing SHA3-256 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA3_256_STATE
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_SHA3_256_STATE, * PSYMCRYPT_SHA3_256_STATE;
+typedef const SYMCRYPT_SHA3_256_STATE* PCSYMCRYPT_SHA3_256_STATE;
+
+//
+// SYMCRYPT_SHA3_384_STATE
+//
+// Data structure that stores the state of an ongoing SHA3-384 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA3_384_STATE
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_SHA3_384_STATE, * PSYMCRYPT_SHA3_384_STATE;
+typedef const SYMCRYPT_SHA3_384_STATE* PCSYMCRYPT_SHA3_384_STATE;
+
+//
+// SYMCRYPT_SHA3_512_STATE
+//
+// Data structure that stores the state of an ongoing SHA3-512 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHA3_512_STATE
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_SHA3_512_STATE, * PSYMCRYPT_SHA3_512_STATE;
+typedef const SYMCRYPT_SHA3_512_STATE* PCSYMCRYPT_SHA3_512_STATE;
+
+//
+// SYMCRYPT_SHAKE128_STATE
+//
+// Data structure that stores the state of an ongoing SHAKE128 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHAKE128_STATE
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_SHAKE128_STATE, * PSYMCRYPT_SHAKE128_STATE;
+typedef const SYMCRYPT_SHAKE128_STATE* PCSYMCRYPT_SHAKE128_STATE;
+
+//
+// SYMCRYPT_SHAKE256_STATE
+//
+// Data structure that stores the state of an ongoing SHAKE256 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_SHAKE256_STATE
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_SHAKE256_STATE, * PSYMCRYPT_SHAKE256_STATE;
+typedef const SYMCRYPT_SHAKE256_STATE* PCSYMCRYPT_SHAKE256_STATE;
+
+//
+// SYMCRYPT_CSHAKE128_STATE
+//
+// Data structure that stores the state of an ongoing CSHAKE128 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_CSHAKE128_STATE
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_CSHAKE128_STATE, * PSYMCRYPT_CSHAKE128_STATE;
+typedef const SYMCRYPT_CSHAKE128_STATE* PCSYMCRYPT_CSHAKE128_STATE;
+
+//
+// SYMCRYPT_CSHAKE256_STATE
+//
+// Data structure that stores the state of an ongoing CSHAKE256 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_CSHAKE256_STATE
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_CSHAKE256_STATE, * PSYMCRYPT_CSHAKE256_STATE;
+typedef const SYMCRYPT_CSHAKE256_STATE* PCSYMCRYPT_CSHAKE256_STATE;
+
+//
+// SYMCRYPT_KMAC128_EXPANDED_KEY
+//
+// Data structure that stores the expanded key for KMAC128.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_KMAC128_EXPANDED_KEY
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_KMAC128_EXPANDED_KEY, * PSYMCRYPT_KMAC128_EXPANDED_KEY;
+typedef const SYMCRYPT_KMAC128_EXPANDED_KEY* PCSYMCRYPT_KMAC128_EXPANDED_KEY;
+
+//
+// SYMCRYPT_KMAC128_STATE
+//
+// Data structure that stores the state of an ongoing KMAC128 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_KMAC128_STATE
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_KMAC128_STATE, * PSYMCRYPT_KMAC128_STATE;
+typedef const SYMCRYPT_KMAC128_STATE* PCSYMCRYPT_KMAC128_STATE;
+
+//
+// SYMCRYPT_KMAC256_EXPANDED_KEY
+//
+// Data structure that stores the expanded key for KMAC256.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_KMAC256_EXPANDED_KEY
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_KMAC256_EXPANDED_KEY, * PSYMCRYPT_KMAC256_EXPANDED_KEY;
+typedef const SYMCRYPT_KMAC256_EXPANDED_KEY* PCSYMCRYPT_KMAC256_EXPANDED_KEY;
+
+//
+// SYMCRYPT_KMAC256_STATE
+//
+// Data structure that stores the state of an ongoing KMAC256 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_KMAC256_STATE
+{
+    SYMCRYPT_KECCAK_STATE   ks;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_KMAC256_STATE, * PSYMCRYPT_KMAC256_STATE;
+typedef const SYMCRYPT_KMAC256_STATE* PCSYMCRYPT_KMAC256_STATE;
+
+
+//
 // Generic hashing
 //
+
+typedef struct _SYMCRYPT_OID {
+    UINT32  cbOID;
+    _Field_size_( cbOID ) PCBYTE  pbOID;
+} SYMCRYPT_OID, *PSYMCRYPT_OID;
+typedef const SYMCRYPT_OID *PCSYMCRYPT_OID;
+
+//
+// OID lists for the most commonly used hash functions
+//
+
+#define SYMCRYPT_MD5_OID_COUNT         (2)
+extern const SYMCRYPT_OID SymCryptMd5OidList[SYMCRYPT_MD5_OID_COUNT];
+
+#define SYMCRYPT_SHA1_OID_COUNT        (2)
+extern const SYMCRYPT_OID SymCryptSha1OidList[SYMCRYPT_SHA1_OID_COUNT];
+
+#define SYMCRYPT_SHA224_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptSha224OidList[SYMCRYPT_SHA224_OID_COUNT];
+
+#define SYMCRYPT_SHA256_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptSha256OidList[SYMCRYPT_SHA256_OID_COUNT];
+
+#define SYMCRYPT_SHA384_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptSha384OidList[SYMCRYPT_SHA384_OID_COUNT];
+
+#define SYMCRYPT_SHA512_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptSha512OidList[SYMCRYPT_SHA512_OID_COUNT];
+
+#define SYMCRYPT_SHA512_224_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptSha512_224OidList[SYMCRYPT_SHA512_224_OID_COUNT];
+
+#define SYMCRYPT_SHA512_256_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptSha512_256OidList[SYMCRYPT_SHA512_256_OID_COUNT];
+
+#define SYMCRYPT_SHA3_224_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptSha3_224OidList[SYMCRYPT_SHA3_224_OID_COUNT];
+
+#define SYMCRYPT_SHA3_256_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptSha3_256OidList[SYMCRYPT_SHA3_256_OID_COUNT];
+
+#define SYMCRYPT_SHA3_384_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptSha3_384OidList[SYMCRYPT_SHA3_384_OID_COUNT];
+
+#define SYMCRYPT_SHA3_512_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptSha3_512OidList[SYMCRYPT_SHA3_512_OID_COUNT];
+
+#define SYMCRYPT_SHAKE128_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptShake128OidList[SYMCRYPT_SHAKE128_OID_COUNT];
+
+#define SYMCRYPT_SHAKE256_OID_COUNT      (2)
+extern const SYMCRYPT_OID SymCryptShake256OidList[SYMCRYPT_SHAKE256_OID_COUNT];
+
+typedef enum _SYMCRYPT_OID_LIST_ID
+{
+    SYMCRYPT_OID_LIST_ID_NULL           = 0,
+    SYMCRYPT_OID_LIST_ID_MD5            = 1,
+    SYMCRYPT_OID_LIST_ID_SHA1           = 2,
+    SYMCRYPT_OID_LIST_ID_SHA224         = 3,
+    SYMCRYPT_OID_LIST_ID_SHA256         = 4,
+    SYMCRYPT_OID_LIST_ID_SHA384         = 5,
+    SYMCRYPT_OID_LIST_ID_SHA512         = 6,
+    SYMCRYPT_OID_LIST_ID_SHA512_224     = 7,
+    SYMCRYPT_OID_LIST_ID_SHA512_256     = 8,
+    SYMCRYPT_OID_LIST_ID_SHA3_224       = 9,
+    SYMCRYPT_OID_LIST_ID_SHA3_256       = 10,
+    SYMCRYPT_OID_LIST_ID_SHA3_384       = 11,
+    SYMCRYPT_OID_LIST_ID_SHA3_512       = 12,
+    SYMCRYPT_OID_LIST_ID_SHAKE128       = 13,
+    SYMCRYPT_OID_LIST_ID_SHAKE256       = 14
+} SYMCRYPT_OID_LIST_ID;
+
+PCSYMCRYPT_OID
+SYMCRYPT_CALL
+SymCryptGetOidList( SYMCRYPT_OID_LIST_ID oidId, _Out_opt_ SIZE_T* pCount );
+//
+// Returns a pointer to the OID list for the specified OID list ID. If pCount is non-NULL, the
+// pointed-to value will be set to the number of elements in the OID list.
+// Returns NULL if the OID list ID is invalid.
+//
+
 typedef union _SYMCRYPT_HASH_STATE
 {
-    SYMCRYPT_MD2_STATE      md2State;
-    SYMCRYPT_MD4_STATE      md4State;
-    SYMCRYPT_MD5_STATE      md5State;
-    SYMCRYPT_SHA1_STATE     sha1State;
-    SYMCRYPT_SHA256_STATE   sha256State;
-    SYMCRYPT_SHA384_STATE   sha384State;
-    SYMCRYPT_SHA512_STATE   sha512State;
+    SYMCRYPT_MD2_STATE          md2State;
+    SYMCRYPT_MD4_STATE          md4State;
+    SYMCRYPT_MD5_STATE          md5State;
+    SYMCRYPT_SHA1_STATE         sha1State;
+    SYMCRYPT_SHA224_STATE       sha224State;
+    SYMCRYPT_SHA256_STATE       sha256State;
+    SYMCRYPT_SHA384_STATE       sha384State;
+    SYMCRYPT_SHA512_STATE       sha512State;
+    SYMCRYPT_SHA512_224_STATE   sha512_224State;
+    SYMCRYPT_SHA512_256_STATE   sha512_256State;
+    SYMCRYPT_SHA3_224_STATE     sha3_224State;
+    SYMCRYPT_SHA3_256_STATE     sha3_256State;
+    SYMCRYPT_SHA3_384_STATE     sha3_384State;
+    SYMCRYPT_SHA3_512_STATE     sha3_512State;
 } SYMCRYPT_HASH_STATE, *PSYMCRYPT_HASH_STATE;
 typedef const SYMCRYPT_HASH_STATE *PCSYMCRYPT_HASH_STATE;
 
 #define SYMCRYPT_HASH_MAX_RESULT_SIZE    SYMCRYPT_SHA512_RESULT_SIZE
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HASH SYMCRYPT_HASH, *PSYMCRYPT_HASH;
+SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HASH;
+SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_PARALLEL_HASH;
+
+typedef struct _SYMCRYPT_HASH SYMCRYPT_HASH, *PSYMCRYPT_HASH;
 typedef const SYMCRYPT_HASH  *PCSYMCRYPT_HASH;
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_PARALLEL_HASH SYMCRYPT_PARALLEL_HASH, *PSYMCRYPT_PARALLEL_HASH;
+typedef struct _SYMCRYPT_PARALLEL_HASH SYMCRYPT_PARALLEL_HASH, *PSYMCRYPT_PARALLEL_HASH;
 typedef const SYMCRYPT_PARALLEL_HASH  *PCSYMCRYPT_PARALLEL_HASH;
 
 typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_HASH_INIT_FUNC)             ( PVOID pState );
 typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_HASH_APPEND_FUNC)           ( PVOID pState, PCBYTE pbData, SIZE_T cbData );
 typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_HASH_RESULT_FUNC)           ( PVOID pState, PVOID pbResult );
 typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_HASH_APPEND_BLOCKS_FUNC)    ( PVOID pChain, PCBYTE pbData, SIZE_T cbData, SIZE_T * pcbRemaining );
+typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_HASH_STATE_COPY_FUNC)       ( PCVOID pStateSrc, PVOID pStateDst );
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HASH 
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HASH
 {
     PSYMCRYPT_HASH_INIT_FUNC            initFunc;
     PSYMCRYPT_HASH_APPEND_FUNC          appendFunc;
     PSYMCRYPT_HASH_RESULT_FUNC          resultFunc;
     PSYMCRYPT_HASH_APPEND_BLOCKS_FUNC   appendBlockFunc;
+    PSYMCRYPT_HASH_STATE_COPY_FUNC      stateCopyFunc;
     UINT32                              stateSize;          // sizeof( hash state )
     UINT32                              resultSize;         // size of hash result
     UINT32                              inputBlockSize;
@@ -670,12 +1231,13 @@ struct _SYMCRYPT_PARALLEL_HASH_OPERATION {
 };
 
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_PARALLEL_HASH_SCRATCH_OPERATION    // as yet unspecified struct
+SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_PARALLEL_HASH_SCRATCH_OPERATION; // as yet unspecified struct
+typedef struct _SYMCRYPT_PARALLEL_HASH_SCRATCH_OPERATION
         SYMCRYPT_PARALLEL_HASH_SCRATCH_OPERATION, *PSYMCRYPT_PARALLEL_HASH_SCRATCH_OPERATION;
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_PARALLEL_HASH_SCRATCH_STATE {
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_PARALLEL_HASH_SCRATCH_STATE {
     PVOID                               hashState;          // the actual hash state
-    BYTE                                processingState;    
+    BYTE                                processingState;
     BYTE                                bytesAlreadyProcessed;  // of the next Append operation
     UINT64                              bytes;              // # bytes left to process on this state
     PSYMCRYPT_PARALLEL_HASH_OPERATION   next;               // next operation to be performed.
@@ -684,13 +1246,12 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_PARALLEL_HASH_SCRATCH_STATE {
 }SYMCRYPT_PARALLEL_HASH_SCRATCH_STATE, *PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE;
 
 
-
 //
-// The scrach space used by parallel SHA-256 consists of three regions:
+// The scratch space used by parallel SHA-256 consists of three regions:
 // - an array of SYMCRYPT_PARALLEL_HASH_SCRATCH_STATE structures, aligned to SYMCRYPT_ALIGN_VALUE.
 // - the work array, an array of pointers to SYMCRYPT_PARALLEL_HASH_SCRATCH_STATEs.
 // - an array of 4 + 8 + 64 SIMD vector elements, aligned to the size of those elements.
-// 
+//
 //
 #if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
 #define SYMCRYPT_SIMD_ELEMENT_SIZE  32
@@ -707,19 +1268,20 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_PARALLEL_HASH_SCRATCH_STATE {
 #define SYMCRYPT_PARALLEL_SHA512_FIXED_SCRATCH  ( (4 + 8 + 80) * SYMCRYPT_SIMD_ELEMENT_SIZE + SYMCRYPT_SIMD_ELEMENT_SIZE - 1  + SYMCRYPT_ALIGN_VALUE - 1 )
 #define SYMCRYPT_PARALLEL_HASH_PER_STATE_SCRATCH  (sizeof( SYMCRYPT_PARALLEL_HASH_SCRATCH_STATE ) + sizeof( PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE ) )
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_PARALLEL_HASH SYMCRYPT_PARALLEL_HASH, *PSYMCRYPT_PARALLEL_HASH;
+SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_PARALLEL_HASH;
+typedef struct _SYMCRYPT_PARALLEL_HASH SYMCRYPT_PARALLEL_HASH, *PSYMCRYPT_PARALLEL_HASH;
 typedef const SYMCRYPT_PARALLEL_HASH  *PCSYMCRYPT_PARALLEL_HASH;
 
 typedef BOOLEAN (SYMCRYPT_CALL * PSYMCRYPT_PARALLEL_HASH_RESULT_FUNC) (PCSYMCRYPT_PARALLEL_HASH pParHash, PSYMCRYPT_COMMON_HASH_STATE pState, PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE pScratch, BOOLEAN *pRes );
 typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_PARALLEL_HASH_RESULT_DONE_FUNC ) (PCSYMCRYPT_PARALLEL_HASH pParHash, PSYMCRYPT_COMMON_HASH_STATE pState, PCSYMRYPT_PARALLEL_HASH_OPERATION pOp);
-typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_PARALLEL_APPEND_FUNC) ( 
+typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_PARALLEL_APPEND_FUNC) (
     _Inout_updates_( nPar )                 PSYMCRYPT_PARALLEL_HASH_SCRATCH_STATE * pWork,
                                             SIZE_T                                  nPar,
                                             SIZE_T                                  nBytes,
     _Out_writes_( cbSimdScratch )           PBYTE                                   pbSimdScratch,
                                             SIZE_T                                  cbSimdScratch );
-                                            
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_PARALLEL_HASH 
+
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_PARALLEL_HASH
 {
     PCSYMCRYPT_HASH                             pHash;
     UINT32                                      parScratchFixed;    // fixed scratch size for parallel hash
@@ -727,9 +1289,9 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_PARALLEL_HASH
     PSYMCRYPT_PARALLEL_HASH_RESULT_FUNC         parResult2Func;
     PSYMCRYPT_PARALLEL_HASH_RESULT_DONE_FUNC    parResultDoneFunc;
 
-    PSYMCRYPT_PARALLEL_APPEND_FUNC              parAppendFunc;      
+    PSYMCRYPT_PARALLEL_APPEND_FUNC              parAppendFunc;
 } SYMCRYPT_PARALLEL_HASH, *PSYMCRYPT_PARALLEL_HASH;
-                                            
+
 
 //======================================================================================================
 // MAC
@@ -741,7 +1303,7 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_PARALLEL_HASH
 //
 // Data structure to store an expanded key for HMAC-MD5.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HMAC_MD5_EXPANDED_KEY
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_MD5_EXPANDED_KEY
 {
     SYMCRYPT_MD5_CHAINING_STATE     innerState;
     SYMCRYPT_MD5_CHAINING_STATE     outerState;
@@ -754,7 +1316,7 @@ typedef const SYMCRYPT_HMAC_MD5_EXPANDED_KEY * PCSYMCRYPT_HMAC_MD5_EXPANDED_KEY;
 //
 // Data structure that encodes an ongoing HMAC-MD5 computation.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HMAC_MD5_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_MD5_STATE
 {
     SYMCRYPT_MD5_STATE                 hash;
     PCSYMCRYPT_HMAC_MD5_EXPANDED_KEY   pKey;
@@ -768,7 +1330,7 @@ typedef const SYMCRYPT_HMAC_MD5_STATE *PCSYMCRYPT_HMAC_MD5_STATE;
 //
 // Data structure to store an expanded key for HMAC-SHA1.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HMAC_SHA1_EXPANDED_KEY
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA1_EXPANDED_KEY
 {
     SYMCRYPT_SHA1_CHAINING_STATE    innerState;
     SYMCRYPT_SHA1_CHAINING_STATE    outerState;
@@ -781,7 +1343,7 @@ typedef const SYMCRYPT_HMAC_SHA1_EXPANDED_KEY * PCSYMCRYPT_HMAC_SHA1_EXPANDED_KE
 //
 // Data structure that encodes an ongoing HMAC-SHA1 computation.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HMAC_SHA1_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA1_STATE
 {
     SYMCRYPT_SHA1_STATE                 hash;
     PCSYMCRYPT_HMAC_SHA1_EXPANDED_KEY   pKey;
@@ -791,11 +1353,38 @@ typedef const SYMCRYPT_HMAC_SHA1_STATE *PCSYMCRYPT_HMAC_SHA1_STATE;
 
 
 //
+// SYMCRYPT_HMAC_SHA224_EXPANDED_KEY
+//
+// Data structure to store an expanded key for HMAC-SHA224.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA224_EXPANDED_KEY
+{
+    SYMCRYPT_SHA256_CHAINING_STATE  innerState;
+    SYMCRYPT_SHA256_CHAINING_STATE  outerState;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_HMAC_SHA224_EXPANDED_KEY, *PSYMCRYPT_HMAC_SHA224_EXPANDED_KEY;
+typedef const SYMCRYPT_HMAC_SHA224_EXPANDED_KEY * PCSYMCRYPT_HMAC_SHA224_EXPANDED_KEY;
+
+//
+// SYMCRYPT_HMAC_SHA224_STATE
+//
+// Data structure that encodes an ongoing HMAC-SHA224 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA224_STATE
+{
+    SYMCRYPT_SHA224_STATE                 hash;
+    PCSYMCRYPT_HMAC_SHA224_EXPANDED_KEY   pKey;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_HMAC_SHA224_STATE, *PSYMCRYPT_HMAC_SHA224_STATE;
+typedef const SYMCRYPT_HMAC_SHA224_STATE *PCSYMCRYPT_HMAC_SHA224_STATE;
+
+
+//
 // SYMCRYPT_HMAC_SHA256_EXPANDED_KEY
 //
-// Data structure to store an expanded key for HMAC-SHA1.
+// Data structure to store an expanded key for HMAC-SHA256.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HMAC_SHA256_EXPANDED_KEY
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA256_EXPANDED_KEY
 {
     SYMCRYPT_SHA256_CHAINING_STATE  innerState;
     SYMCRYPT_SHA256_CHAINING_STATE  outerState;
@@ -806,9 +1395,9 @@ typedef const SYMCRYPT_HMAC_SHA256_EXPANDED_KEY * PCSYMCRYPT_HMAC_SHA256_EXPANDE
 //
 // SYMCRYPT_HMAC_SHA256_STATE
 //
-// Data structure that encodes an ongoing HMAC-SHA1 computation.
+// Data structure that encodes an ongoing HMAC-SHA256 computation.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HMAC_SHA256_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA256_STATE
 {
     SYMCRYPT_SHA256_STATE                 hash;
     PCSYMCRYPT_HMAC_SHA256_EXPANDED_KEY   pKey;
@@ -820,9 +1409,9 @@ typedef const SYMCRYPT_HMAC_SHA256_STATE *PCSYMCRYPT_HMAC_SHA256_STATE;
 //
 // SYMCRYPT_HMAC_SHA384_EXPANDED_KEY
 //
-// Data structure to store an expanded key for HMAC-SHA1.
+// Data structure to store an expanded key for HMAC-SHA384.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HMAC_SHA384_EXPANDED_KEY
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA384_EXPANDED_KEY
 {
     SYMCRYPT_SHA512_CHAINING_STATE  innerState;
     SYMCRYPT_SHA512_CHAINING_STATE  outerState;
@@ -833,9 +1422,9 @@ typedef const SYMCRYPT_HMAC_SHA384_EXPANDED_KEY * PCSYMCRYPT_HMAC_SHA384_EXPANDE
 //
 // SYMCRYPT_HMAC_SHA384_STATE
 //
-// Data structure that encodes an ongoing HMAC-SHA1 computation.
+// Data structure that encodes an ongoing HMAC-SHA384 computation.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HMAC_SHA384_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA384_STATE
 {
     SYMCRYPT_SHA384_STATE                 hash;
     PCSYMCRYPT_HMAC_SHA384_EXPANDED_KEY   pKey;
@@ -846,9 +1435,9 @@ typedef const SYMCRYPT_HMAC_SHA384_STATE *PCSYMCRYPT_HMAC_SHA384_STATE;
 //
 // SYMCRYPT_HMAC_SHA512_EXPANDED_KEY
 //
-// Data structure to store an expanded key for HMAC-SHA1.
+// Data structure to store an expanded key for HMAC-SHA512.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HMAC_SHA512_EXPANDED_KEY
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA512_EXPANDED_KEY
 {
     SYMCRYPT_SHA512_CHAINING_STATE  innerState;
     SYMCRYPT_SHA512_CHAINING_STATE  outerState;
@@ -859,9 +1448,9 @@ typedef const SYMCRYPT_HMAC_SHA512_EXPANDED_KEY * PCSYMCRYPT_HMAC_SHA512_EXPANDE
 //
 // SYMCRYPT_HMAC_SHA512_STATE
 //
-// Data structure that encodes an ongoing HMAC-SHA1 computation.
+// Data structure that encodes an ongoing HMAC-SHA512 computation.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HMAC_SHA512_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA512_STATE
 {
     SYMCRYPT_SHA512_STATE                 hash;
     PCSYMCRYPT_HMAC_SHA512_EXPANDED_KEY   pKey;
@@ -869,15 +1458,189 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_HMAC_SHA512_STATE
 } SYMCRYPT_HMAC_SHA512_STATE, *PSYMCRYPT_HMAC_SHA512_STATE;
 typedef const SYMCRYPT_HMAC_SHA512_STATE *PCSYMCRYPT_HMAC_SHA512_STATE;
 
+//
+// SYMCRYPT_HMAC_SHA512_224_EXPANDED_KEY
+//
+// Data structure to store an expanded key for HMAC-SHA512_224.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA512_224_EXPANDED_KEY
+{
+    SYMCRYPT_SHA512_CHAINING_STATE  innerState;
+    SYMCRYPT_SHA512_CHAINING_STATE  outerState;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_HMAC_SHA512_224_EXPANDED_KEY, *PSYMCRYPT_HMAC_SHA512_224_EXPANDED_KEY;
+typedef const SYMCRYPT_HMAC_SHA512_224_EXPANDED_KEY * PCSYMCRYPT_HMAC_SHA512_224_EXPANDED_KEY;
+
+//
+// SYMCRYPT_HMAC_SHA512_224_STATE
+//
+// Data structure that encodes an ongoing HMAC-SHA512_224 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA512_224_STATE
+{
+    SYMCRYPT_SHA512_224_STATE                 hash;
+    PCSYMCRYPT_HMAC_SHA512_224_EXPANDED_KEY   pKey;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_HMAC_SHA512_224_STATE, *PSYMCRYPT_HMAC_SHA512_224_STATE;
+typedef const SYMCRYPT_HMAC_SHA512_224_STATE *PCSYMCRYPT_HMAC_SHA512_224_STATE;
+
+//
+// SYMCRYPT_HMAC_SHA512_256_EXPANDED_KEY
+//
+// Data structure to store an expanded key for HMAC-SHA512_256.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA512_256_EXPANDED_KEY
+{
+    SYMCRYPT_SHA512_CHAINING_STATE  innerState;
+    SYMCRYPT_SHA512_CHAINING_STATE  outerState;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_HMAC_SHA512_256_EXPANDED_KEY, *PSYMCRYPT_HMAC_SHA512_256_EXPANDED_KEY;
+typedef const SYMCRYPT_HMAC_SHA512_256_EXPANDED_KEY * PCSYMCRYPT_HMAC_SHA512_256_EXPANDED_KEY;
+
+//
+// SYMCRYPT_HMAC_SHA512_256_STATE
+//
+// Data structure that encodes an ongoing HMAC-SHA512_256 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA512_256_STATE
+{
+    SYMCRYPT_SHA512_256_STATE                 hash;
+    PCSYMCRYPT_HMAC_SHA512_256_EXPANDED_KEY   pKey;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_HMAC_SHA512_256_STATE, *PSYMCRYPT_HMAC_SHA512_256_STATE;
+typedef const SYMCRYPT_HMAC_SHA512_256_STATE *PCSYMCRYPT_HMAC_SHA512_256_STATE;
+
+//
+// SYMCRYPT_HMAC_EXPANDED_KEY
+//
+// Generic HMAC Expanded Key data structure
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_EXPANDED_KEY
+{
+    PCSYMCRYPT_HASH     pHash;
+    SYMCRYPT_HASH_STATE innerState;
+    SYMCRYPT_HASH_STATE outerState;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_HMAC_EXPANDED_KEY, * PSYMCRYPT_HMAC_EXPANDED_KEY;
+typedef const SYMCRYPT_HMAC_EXPANDED_KEY* PCSYMCRYPT_HMAC_EXPANDED_KEY;
+
+//
+// SYMCRYPT_HMAC_STATE
+//
+// Generic HMAC data structure
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_STATE
+{
+    PCSYMCRYPT_HMAC_EXPANDED_KEY    pKey;
+    SYMCRYPT_HASH_STATE             hash;
+    SYMCRYPT_MAGIC_FIELD
+} SYMCRYPT_HMAC_STATE, * PSYMCRYPT_HMAC_STATE;
+typedef const SYMCRYPT_HMAC_STATE* PCSYMCRYPT_HMAC_STATE;
+
+//
+// SYMCRYPT_HMAC_SHA3_224_EXPANDED_KEY
+//
+// Data structure to store an expanded key for HMAC-SHA3-224
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA3_224_EXPANDED_KEY
+{
+    SYMCRYPT_HMAC_EXPANDED_KEY  generic;
+
+} SYMCRYPT_HMAC_SHA3_224_EXPANDED_KEY, *PSYMCRYPT_HMAC_SHA3_224_EXPANDED_KEY;
+typedef const SYMCRYPT_HMAC_SHA3_224_EXPANDED_KEY * PCSYMCRYPT_HMAC_SHA3_224_EXPANDED_KEY;
+
+//
+// SYMCRYPT_HMAC_SHA3_224_STATE
+//
+// Data structure that encodes an ongoing HMAC-SHA3-224 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA3_224_STATE
+{
+    SYMCRYPT_HMAC_STATE generic;
+
+} SYMCRYPT_HMAC_SHA3_224_STATE, *PSYMCRYPT_HMAC_SHA3_224_STATE;
+typedef const SYMCRYPT_HMAC_SHA3_224_STATE *PCSYMCRYPT_HMAC_SHA3_224_STATE;
+
+//
+// SYMCRYPT_HMAC_SHA3_256_EXPANDED_KEY
+//
+// Data structure to store an expanded key for HMAC-SHA3-256
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA3_256_EXPANDED_KEY
+{
+    SYMCRYPT_HMAC_EXPANDED_KEY  generic;
+
+} SYMCRYPT_HMAC_SHA3_256_EXPANDED_KEY, *PSYMCRYPT_HMAC_SHA3_256_EXPANDED_KEY;
+typedef const SYMCRYPT_HMAC_SHA3_256_EXPANDED_KEY * PCSYMCRYPT_HMAC_SHA3_256_EXPANDED_KEY;
+
+//
+// SYMCRYPT_HMAC_SHA3_256_STATE
+//
+// Data structure that encodes an ongoing HMAC-SHA3-256 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA3_256_STATE
+{
+    SYMCRYPT_HMAC_STATE generic;
+
+} SYMCRYPT_HMAC_SHA3_256_STATE, *PSYMCRYPT_HMAC_SHA3_256_STATE;
+typedef const SYMCRYPT_HMAC_SHA3_256_STATE *PCSYMCRYPT_HMAC_SHA3_256_STATE;
+
+//
+// SYMCRYPT_HMAC_SHA3_384_EXPANDED_KEY
+//
+// Data structure to store an expanded key for HMAC-SHA3-384
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA3_384_EXPANDED_KEY
+{
+    SYMCRYPT_HMAC_EXPANDED_KEY  generic;
+
+} SYMCRYPT_HMAC_SHA3_384_EXPANDED_KEY, *PSYMCRYPT_HMAC_SHA3_384_EXPANDED_KEY;
+typedef const SYMCRYPT_HMAC_SHA3_384_EXPANDED_KEY * PCSYMCRYPT_HMAC_SHA3_384_EXPANDED_KEY;
+
+//
+// SYMCRYPT_HMAC_SHA3_384_STATE
+//
+// Data structure that encodes an ongoing HMAC-SHA3-384 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA3_384_STATE
+{
+    SYMCRYPT_HMAC_STATE generic;
+
+} SYMCRYPT_HMAC_SHA3_384_STATE, *PSYMCRYPT_HMAC_SHA3_384_STATE;
+typedef const SYMCRYPT_HMAC_SHA3_384_STATE *PCSYMCRYPT_HMAC_SHA3_384_STATE;
+
+//
+// SYMCRYPT_HMAC_SHA3_512_EXPANDED_KEY
+//
+// Data structure to store an expanded key for HMAC-SHA3-512
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA3_512_EXPANDED_KEY
+{
+    SYMCRYPT_HMAC_EXPANDED_KEY  generic;
+
+} SYMCRYPT_HMAC_SHA3_512_EXPANDED_KEY, *PSYMCRYPT_HMAC_SHA3_512_EXPANDED_KEY;
+typedef const SYMCRYPT_HMAC_SHA3_512_EXPANDED_KEY * PCSYMCRYPT_HMAC_SHA3_512_EXPANDED_KEY;
+
+//
+// SYMCRYPT_HMAC_SHA3_512_STATE
+//
+// Data structure that encodes an ongoing HMAC-SHA3-512 computation.
+//
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_HMAC_SHA3_512_STATE
+{
+    SYMCRYPT_HMAC_STATE generic;
+
+} SYMCRYPT_HMAC_SHA3_512_STATE, *PSYMCRYPT_HMAC_SHA3_512_STATE;
+typedef const SYMCRYPT_HMAC_SHA3_512_STATE *PCSYMCRYPT_HMAC_SHA3_512_STATE;
 
 //
 // SYMCRYPT_AES_EXPANDED_KEY
 //
-// Expanded key for AES operattions.
+// Expanded key for AES operations.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_AES_EXPANDED_KEY {
-    SYMCRYPT_ALIGN BYTE RoundKey[29][4][4];  
-        // Round keys, first the encryption round keys in encryption order, 
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_AES_EXPANDED_KEY {
+    SYMCRYPT_ALIGN BYTE RoundKey[29][4][4];
+        // Round keys, first the encryption round keys in encryption order,
         // followed by the decryption round keys in decryption order.
         // The first decryption round key is the last encryption round key.
         // AES-256 has 14 rounds and thus 15 round keys for encryption and 15
@@ -885,7 +1648,7 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_AES_EXPANDED_KEY {
     BYTE   (*lastEncRoundKey)[4][4];    // Pointer to last encryption round key
                                         // also the first round key for decryption
     BYTE   (*lastDecRoundKey)[4][4];    // Pointer to last decryption round key.
-    
+
     SYMCRYPT_MAGIC_FIELD
 } SYMCRYPT_AES_EXPANDED_KEY, *PSYMCRYPT_AES_EXPANDED_KEY;
 typedef const SYMCRYPT_AES_EXPANDED_KEY * PCSYMCRYPT_AES_EXPANDED_KEY;
@@ -896,7 +1659,7 @@ typedef const SYMCRYPT_AES_EXPANDED_KEY * PCSYMCRYPT_AES_EXPANDED_KEY;
 // Note: SYMCRYPT_AES_BLOCK_SIZE is not yet defined, so we use
 // literal constants instead.
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_AES_CMAC_EXPANDED_KEY
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_AES_CMAC_EXPANDED_KEY
 {
     SYMCRYPT_AES_EXPANDED_KEY   aesKey;
     BYTE                        K1[16];
@@ -905,7 +1668,7 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_AES_CMAC_EXPANDED_KEY
 } SYMCRYPT_AES_CMAC_EXPANDED_KEY, *PSYMCRYPT_AES_CMAC_EXPANDED_KEY;
 typedef const SYMCRYPT_AES_CMAC_EXPANDED_KEY * PCSYMCRYPT_AES_CMAC_EXPANDED_KEY;
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_AES_CMAC_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_AES_CMAC_STATE
 {
     BYTE                                chain[16];
     BYTE                                buf[16];
@@ -920,12 +1683,12 @@ typedef const SYMCRYPT_AES_CMAC_STATE * PCSYMCRYPT_AES_CMAC_STATE;
 // POLY1305
 //
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_POLY1305_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_POLY1305_STATE
 {
     UINT32  r[4];       // R := \sum 2^{32*i} r[i]. R is already clamped.
     UINT32  s[4];       // S := \sum 2^{32*i} s[i]
     UINT32  a[5];       // Accumulator := sum 2^{32*i} a[i], a[4] <= approx 8
-    SIZE_T  bytesInBuffer; 
+    SIZE_T  bytesInBuffer;
     BYTE    buf[16];    // Partial block buffer
 
     SYMCRYPT_MAGIC_FIELD
@@ -935,7 +1698,7 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_POLY1305_STATE
 // XTS-AES
 //
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_XTS_AES_EXPANDED_KEY
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_XTS_AES_EXPANDED_KEY
 {
     SYMCRYPT_AES_EXPANDED_KEY   key1;
     SYMCRYPT_AES_EXPANDED_KEY   key2;
@@ -953,21 +1716,41 @@ typedef const SYMCRYPT_XTS_AES_EXPANDED_KEY * PCSYMCRYPT_XTS_AES_EXPANDED_KEY;
 
 typedef union _SYMCRYPT_MAC_STATE
 {
-    SYMCRYPT_HMAC_MD5_STATE     md5State;
-    SYMCRYPT_HMAC_SHA1_STATE    sha1State;
-    SYMCRYPT_HMAC_SHA256_STATE  sha256State;
-    SYMCRYPT_HMAC_SHA512_STATE  sha512State;
-    SYMCRYPT_AES_CMAC_STATE     aescmacState;
+    SYMCRYPT_HMAC_MD5_STATE         md5State;
+    SYMCRYPT_HMAC_SHA1_STATE        sha1State;
+    SYMCRYPT_HMAC_SHA224_STATE      sha224State;
+    SYMCRYPT_HMAC_SHA256_STATE      sha256State;
+    SYMCRYPT_HMAC_SHA384_STATE      sha384State;
+    SYMCRYPT_HMAC_SHA512_STATE      sha512State;
+    SYMCRYPT_HMAC_SHA512_224_STATE  sha512_224State;
+    SYMCRYPT_HMAC_SHA512_256_STATE  sha512_256State;
+    SYMCRYPT_HMAC_SHA3_224_STATE    sha3_224State;
+    SYMCRYPT_HMAC_SHA3_256_STATE    sha3_256State;
+    SYMCRYPT_HMAC_SHA3_384_STATE    sha3_384State;
+    SYMCRYPT_HMAC_SHA3_512_STATE    sha3_512State;
+    SYMCRYPT_AES_CMAC_STATE         aescmacState;
+    SYMCRYPT_KMAC128_STATE          kmac128State;
+    SYMCRYPT_KMAC256_STATE          kmac256State;
 } SYMCRYPT_MAC_STATE, *PSYMCRYPT_MAC_STATE;
 typedef const SYMCRYPT_MAC_STATE *PCSYMCRYPT_MAC_STATE;
 
 typedef union _SYMCRYPT_MAC_EXPANDED_KEY
 {
-    SYMCRYPT_HMAC_MD5_EXPANDED_KEY      md5Key;
-    SYMCRYPT_HMAC_SHA1_EXPANDED_KEY     sha1Key;
-    SYMCRYPT_HMAC_SHA256_EXPANDED_KEY   sha256Key;
-    SYMCRYPT_HMAC_SHA512_EXPANDED_KEY   sha512Key;
-    SYMCRYPT_AES_CMAC_EXPANDED_KEY      aescmacKey;
+    SYMCRYPT_HMAC_MD5_EXPANDED_KEY          md5Key;
+    SYMCRYPT_HMAC_SHA1_EXPANDED_KEY         sha1Key;
+    SYMCRYPT_HMAC_SHA224_EXPANDED_KEY       sha224Key;
+    SYMCRYPT_HMAC_SHA256_EXPANDED_KEY       sha256Key;
+    SYMCRYPT_HMAC_SHA384_EXPANDED_KEY       sha384Key;
+    SYMCRYPT_HMAC_SHA512_EXPANDED_KEY       sha512Key;
+    SYMCRYPT_HMAC_SHA512_224_EXPANDED_KEY   sha512_224Key;
+    SYMCRYPT_HMAC_SHA512_256_EXPANDED_KEY   sha512_256Key;
+    SYMCRYPT_HMAC_SHA3_224_EXPANDED_KEY     sha3_224Key;
+    SYMCRYPT_HMAC_SHA3_256_EXPANDED_KEY     sha3_256Key;
+    SYMCRYPT_HMAC_SHA3_384_EXPANDED_KEY     sha3_384Key;
+    SYMCRYPT_HMAC_SHA3_512_EXPANDED_KEY     sha3_512Key;
+    SYMCRYPT_AES_CMAC_EXPANDED_KEY          aescmacKey;
+    SYMCRYPT_KMAC128_EXPANDED_KEY           kmac128Key;
+    SYMCRYPT_KMAC256_EXPANDED_KEY           kmac256Key;
 } SYMCRYPT_MAC_EXPANDED_KEY, *PSYMCRYPT_MAC_EXPANDED_KEY;
 typedef const SYMCRYPT_MAC_EXPANDED_KEY *PCSYMCRYPT_MAC_EXPANDED_KEY;
 
@@ -976,8 +1759,9 @@ typedef SYMCRYPT_ERROR (SYMCRYPT_CALL * PSYMCRYPT_MAC_EXPAND_KEY)
 typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_MAC_INIT)     ( PVOID pState,  PCVOID pExpandedKey );
 typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_MAC_APPEND)( PVOID pState, PCBYTE pbData, SIZE_T cbData );
 typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_MAC_RESULT)  ( PVOID pState, PVOID pbResult );
+typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_MAC_RESULT_EX)  ( PVOID pState, PVOID pbResult, SIZE_T cbResult );
 
-typedef struct _SYMCRYPT_MAC 
+typedef struct _SYMCRYPT_MAC
 {
     PSYMCRYPT_MAC_EXPAND_KEY    expandKeyFunc;
     PSYMCRYPT_MAC_INIT          initFunc;
@@ -996,7 +1780,7 @@ typedef const SYMCRYPT_MAC  *PCSYMCRYPT_MAC;
 //
 // 3DES
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_3DES_EXPANDED_KEY {
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_3DES_EXPANDED_KEY {
     UINT32  roundKey[3][16][2];     // 3 keys, 16 rounds, 2 UINT32s/round
     SYMCRYPT_MAGIC_FIELD
 } SYMCRYPT_3DES_EXPANDED_KEY, *PSYMCRYPT_3DES_EXPANDED_KEY;
@@ -1005,7 +1789,7 @@ typedef const SYMCRYPT_3DES_EXPANDED_KEY * PCSYMCRYPT_3DES_EXPANDED_KEY;
 //
 // DES
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_DES_EXPANDED_KEY {
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_DES_EXPANDED_KEY {
     SYMCRYPT_3DES_EXPANDED_KEY threeDes;
 } SYMCRYPT_DES_EXPANDED_KEY, *PSYMCRYPT_DES_EXPANDED_KEY;
 typedef const SYMCRYPT_DES_EXPANDED_KEY * PCSYMCRYPT_DES_EXPANDED_KEY;
@@ -1013,7 +1797,7 @@ typedef const SYMCRYPT_DES_EXPANDED_KEY * PCSYMCRYPT_DES_EXPANDED_KEY;
 //
 // DESX
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_DESX_EXPANDED_KEY {
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_DESX_EXPANDED_KEY {
     SYMCRYPT_DES_EXPANDED_KEY   desKey;
     BYTE                        inputWhitening[8];
     BYTE                        outputWhitening[8];
@@ -1023,7 +1807,7 @@ typedef const SYMCRYPT_DESX_EXPANDED_KEY * PCSYMCRYPT_DESX_EXPANDED_KEY;
 //
 // RC2
 //
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_RC2_EXPANDED_KEY {
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_RC2_EXPANDED_KEY {
     UINT16  K[64];
     SYMCRYPT_MAGIC_FIELD
 } SYMCRYPT_RC2_EXPANDED_KEY, *PSYMCRYPT_RC2_EXPANDED_KEY;
@@ -1035,19 +1819,19 @@ typedef const SYMCRYPT_RC2_EXPANDED_KEY * PCSYMCRYPT_RC2_EXPANDED_KEY;
 //
 #define SYMCRYPT_CCM_BLOCK_SIZE (16)
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_CCM_STATE {
-    PCSYMCRYPT_BLOCKCIPHER  pBlockCipher;
-    PCVOID                  pExpandedKey;
-    UINT64                  cbData;                                     // exact length of data
-    SIZE_T                  cbTag;
-    SIZE_T                  cbNonce;
-    SIZE_T                  cbCounter;                                  // # bytes in counter field
-    UINT64                  bytesProcessed;                             // data bytes processed so far
-    SIZE_T                  bytesInMacBlock;
-    SYMCRYPT_ALIGN BYTE     counterBlock[SYMCRYPT_CCM_BLOCK_SIZE];      // Current counter block value
-    SYMCRYPT_ALIGN BYTE     macBlock[SYMCRYPT_CCM_BLOCK_SIZE];          // Current state of the CBC-MAC part of CCM
-    SYMCRYPT_ALIGN BYTE     keystreamBlock[SYMCRYPT_CCM_BLOCK_SIZE];    // Remaining key stream if partial block has been processed
-    SYMCRYPT_MAGIC_FIELD
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_CCM_STATE {
+                                                    PCSYMCRYPT_BLOCKCIPHER  pBlockCipher;
+                                                    PCVOID                  pExpandedKey;
+                                                    UINT64                  cbData;                                     // exact length of data
+                                                    SIZE_T                  cbTag;
+                                                    SIZE_T                  cbNonce;
+                                                    SIZE_T                  cbCounter;                                  // # bytes in counter field
+                                                    UINT64                  bytesProcessed;                             // data bytes processed so far
+    _Field_range_( 0, SYMCRYPT_CCM_BLOCK_SIZE-1 )   SIZE_T                  bytesInMacBlock;
+                                                    SYMCRYPT_ALIGN BYTE     counterBlock[SYMCRYPT_CCM_BLOCK_SIZE];      // Current counter block value
+                                                    SYMCRYPT_ALIGN BYTE     macBlock[SYMCRYPT_CCM_BLOCK_SIZE];          // Current state of the CBC-MAC part of CCM
+                                                    SYMCRYPT_ALIGN BYTE     keystreamBlock[SYMCRYPT_CCM_BLOCK_SIZE];    // Remaining key stream if partial block has been processed
+                                                    SYMCRYPT_MAGIC_FIELD
 } SYMCRYPT_CCM_STATE, *PSYMCRYPT_CCM_STATE;
 
 
@@ -1065,19 +1849,67 @@ typedef union _SYMCRYPT_GCM_SUPPORTED_BLOCKCIPHER_KEYS
 #define SYMCRYPT_GF128_FIELD_SIZE   (128)
 #define SYMCRYPT_GF128_BLOCK_SIZE   (16)        // # bytes in a field element/block
 #define SYMCRYPT_GCM_BLOCK_SIZE     (16)
-#define SYMCRYPT_GCM_MAX_KEY_SIZE   (32)        
+#define SYMCRYPT_GCM_MAX_KEY_SIZE   (32)
+
+
+#define SYMCRYPT_GCM_MAX_DATA_SIZE           (((UINT64)1 << 36) - 32)
+
+#define SYMCRYPT_GCM_BLOCK_MOD_MASK      (SYMCRYPT_GCM_BLOCK_SIZE - 1)
+#define SYMCRYPT_GCM_BLOCK_ROUND_MASK    (~SYMCRYPT_GCM_BLOCK_MOD_MASK)
 
 #if SYMCRYPT_CPU_X86
-    // 
-    // x86 needs extra alignment of the GHASH expanded key to support 
+    //
+    // x86 needs extra alignment of the GHASH expanded key to support
     // aligned (fast) XMM access. AMD64 has enough natural alignment to
     // achieve this.
-    // 
+    //
     #define SYMCRYPT_GHASH_EXTRA_KEY_ALIGNMENT
 #endif
 
 #define SYMCRYPT_GHASH_ALLOW_XMM    (SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64)
 #define SYMCRYPT_GHASH_ALLOW_NEON   (SYMCRYPT_CPU_ARM | SYMCRYPT_CPU_ARM64)
+
+
+#if SYMCRYPT_CPU_ARM
+#include <arm_neon.h>
+#if SYMCRYPT_GNUC
+    #define __n128 uint32x4_t
+    #define __n64 uint64x1_t
+#endif
+
+#elif SYMCRYPT_CPU_ARM64
+
+    #if SYMCRYPT_MS_VC
+        #include <arm64_neon.h>
+
+        // See section 6.7.8 of the C standard for details on this initializer usage.
+        #define SYMCRYPT_SET_N128_U64(d0, d1) \
+            ((__n128) {.n128_u64 = {d0, d1}})
+        #define SYMCRYPT_SET_N64_U64(d0) \
+            ((__n64) {.n64_u64 = {d0}})
+        #define SYMCRYPT_SET_N128_U8(b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15) \
+            ((__n128) {.n128_u8 = {b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15}})
+    #elif SYMCRYPT_GNUC
+        #include <arm_neon.h>
+
+        #define __n128 uint8x16_t
+        #define __n64 uint8x8_t
+
+        #define SYMCRYPT_SET_N128_U64(d0, d1) \
+            ((__n128) ((uint64x2_t) {d0, d1}))
+        #define SYMCRYPT_SET_N64_U64(d0) \
+            ((__n64) ((uint64x1_t) {d0}))
+        #define SYMCRYPT_SET_N128_U8(b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15) \
+            ((__n128) ((uint8x16_t) {b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15}))
+
+        #define vmullq_p64( a, b )      ((__n128) vmull_p64(vgetq_lane_p64((poly64x2_t)a, 0), vgetq_lane_p64((poly64x2_t)b, 0)))
+        #define vmull_p64( a, b )       ((__n128) vmull_p64( (poly64_t)a, (poly64_t)b ))
+        #define vmull_high_p64( a, b )  ((__n128) vmull_high_p64( (poly64x2_t)a, (poly64x2_t)b ))
+
+        typedef uint64_t ULONG64;
+    #endif
+
+#endif
 
 //
 // All platforms use the same in-memory representation:
@@ -1086,11 +1918,11 @@ typedef union _SYMCRYPT_GCM_SUPPORTED_BLOCKCIPHER_KEYS
 // Note: the actual GF(2^128) bit order is reversed in the standard
 // for some reason; the
 // polynomial \sum b_i x^i is represented by integer \sum b_i 2^{127-i})
-// On x86/amd64 the same in-memory byte structure is also accessed as an 
-// __m128i, which works as both the UINT64s, UINT32s, and the __m128i use 
+// On x86/amd64 the same in-memory byte structure is also accessed as an
+// __m128i, which works as both the UINT64s, UINT32s, and the __m128i use
 // LSBfirst convention.
 //
-typedef SYMCRYPT_ALIGN union _SYMCRYPT_GF128_ELEMENT {
+typedef SYMCRYPT_ALIGN_UNION _SYMCRYPT_GF128_ELEMENT {
     UINT64 ull[2];
 #if SYMCRYPT_GHASH_ALLOW_XMM
     //
@@ -1110,7 +1942,7 @@ typedef const SYMCRYPT_GF128_ELEMENT * PCSYMCRYPT_GF128_ELEMENT;
 
 
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_GHASH_EXPANDED_KEY {
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_GHASH_EXPANDED_KEY {
 #if defined( SYMCRYPT_GHASH_EXTRA_KEY_ALIGNMENT )
     UINT32  tableOffset;
     BYTE    tableSpace[ (SYMCRYPT_GF128_FIELD_SIZE + 1) * sizeof( SYMCRYPT_GF128_ELEMENT ) ];
@@ -1121,7 +1953,7 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_GHASH_EXPANDED_KEY {
 typedef const SYMCRYPT_GHASH_EXPANDED_KEY * PCSYMCRYPT_GHASH_EXPANDED_KEY;
 
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_GCM_EXPANDED_KEY {
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_GCM_EXPANDED_KEY {
     SYMCRYPT_GHASH_EXPANDED_KEY             ghashKey;
     PCSYMCRYPT_BLOCKCIPHER                  pBlockCipher;
     SYMCRYPT_GCM_SUPPORTED_BLOCKCIPHER_KEYS blockcipherKey;
@@ -1132,16 +1964,16 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_GCM_EXPANDED_KEY {
 typedef const SYMCRYPT_GCM_EXPANDED_KEY * PCSYMCRYPT_GCM_EXPANDED_KEY;
 
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_GCM_STATE {
-    PCSYMCRYPT_GCM_EXPANDED_KEY pKey;
-    UINT64                      cbData;         // Number of data bytes
-    UINT64                      cbAuthData;     // Number of AAD bytes
-    SIZE_T                      bytesInMacBlock;
-    SYMCRYPT_GF128_ELEMENT      ghashState;
-    SYMCRYPT_ALIGN BYTE         counterBlock[SYMCRYPT_GCM_BLOCK_SIZE];
-    SYMCRYPT_ALIGN BYTE         macBlock[SYMCRYPT_GCM_BLOCK_SIZE];
-    SYMCRYPT_ALIGN BYTE         keystreamBlock[SYMCRYPT_GCM_BLOCK_SIZE];
-    SYMCRYPT_MAGIC_FIELD
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_GCM_STATE {
+                                                    PCSYMCRYPT_GCM_EXPANDED_KEY pKey;
+                                                    UINT64                      cbData;         // Number of data bytes
+                                                    UINT64                      cbAuthData;     // Number of AAD bytes
+    _Field_range_( 0, SYMCRYPT_GCM_BLOCK_SIZE-1 )   SIZE_T                      bytesInMacBlock;
+                                                    SYMCRYPT_GF128_ELEMENT      ghashState;
+                                                    SYMCRYPT_ALIGN BYTE         counterBlock[SYMCRYPT_GCM_BLOCK_SIZE];
+                                                    SYMCRYPT_ALIGN BYTE         macBlock[SYMCRYPT_GCM_BLOCK_SIZE];
+                                                    SYMCRYPT_ALIGN BYTE         keystreamBlock[SYMCRYPT_GCM_BLOCK_SIZE];
+                                                    SYMCRYPT_MAGIC_FIELD
 } SYMCRYPT_GCM_STATE, * PSYMCRYPT_GCM_STATE;
 typedef const SYMCRYPT_GCM_STATE * PCSYMCRYPT_GCM_STATE;
 
@@ -1153,11 +1985,11 @@ typedef const SYMCRYPT_GCM_STATE * PCSYMCRYPT_GCM_STATE;
 
 typedef SYMCRYPT_ERROR( SYMCRYPT_CALL * PSYMCRYPT_BLOCKCIPHER_EXPAND_KEY )
 (PVOID pExpandedKey, PCBYTE pbKey, SIZE_T cbKey);
-typedef VOID( SYMCRYPT_CALL * PSYMCRYPT_BLOCKCIPHER_CRYPT )     (PCVOID pExpandedKey, PCBYTE pbSrc, PBYTE pbDst);
-typedef VOID( SYMCRYPT_CALL * PSYMCRYPT_BLOCKCIPHER_CRYPT_ECB ) (PCVOID pExpandedKey, PCBYTE pbSrc, PBYTE pbDst, SIZE_T cbData);
-typedef VOID( SYMCRYPT_CALL * PSYMCRYPT_BLOCKCIPHER_CRYPT_MODE )(PCVOID pExpandedKey, PBYTE pbChainingValue, PCBYTE pbSrc, PBYTE pbDst, SIZE_T cbData);
-typedef VOID( SYMCRYPT_CALL * PSYMCRYPT_BLOCKCIPHER_MAC_MODE )  (PCVOID pExpandedKey, PBYTE pbChainingValue, PCBYTE pbSrc, SIZE_T cbData);
-typedef VOID( SYMCRYPT_CALL * PSYMCRYPT_BLOCKCIPHER_CRYPT_XTS ) (PCVOID pExpandedKey, PBYTE pbTweakBlock, PCBYTE pbSrc, PBYTE pbDst, SIZE_T cbData);
+typedef VOID( SYMCRYPT_CALL * PSYMCRYPT_BLOCKCIPHER_CRYPT )         (PCVOID pExpandedKey, PCBYTE pbSrc, PBYTE pbDst);
+typedef VOID( SYMCRYPT_CALL * PSYMCRYPT_BLOCKCIPHER_CRYPT_ECB )     (PCVOID pExpandedKey, PCBYTE pbSrc, PBYTE pbDst, SIZE_T cbData);
+typedef VOID( SYMCRYPT_CALL * PSYMCRYPT_BLOCKCIPHER_CRYPT_MODE )    (PCVOID pExpandedKey, PBYTE pbChainingValue, PCBYTE pbSrc, PBYTE pbDst, SIZE_T cbData);
+typedef VOID( SYMCRYPT_CALL * PSYMCRYPT_BLOCKCIPHER_MAC_MODE )      (PCVOID pExpandedKey, PBYTE pbChainingValue, PCBYTE pbSrc, SIZE_T cbData);
+typedef VOID( SYMCRYPT_CALL * PSYMCRYPT_BLOCKCIPHER_AEADPART_MODE ) (PVOID pState, PCBYTE pbSrc, PBYTE pbDst, SIZE_T cbData);
 
 struct _SYMCRYPT_BLOCKCIPHER {
                                                 PSYMCRYPT_BLOCKCIPHER_EXPAND_KEY    expandKeyFunc;      // mandatory
@@ -1169,16 +2001,99 @@ struct _SYMCRYPT_BLOCKCIPHER {
                                                 PSYMCRYPT_BLOCKCIPHER_CRYPT_MODE    cbcDecryptFunc;     // NULL if no optimized version available
                                                 PSYMCRYPT_BLOCKCIPHER_MAC_MODE      cbcMacFunc;         // NULL if no optimized version available
                                                 PSYMCRYPT_BLOCKCIPHER_CRYPT_MODE    ctrMsb64Func;       // NULL if no optimized version available
-                                                PSYMCRYPT_BLOCKCIPHER_CRYPT_XTS     xtsEncFunc;
-                                                PSYMCRYPT_BLOCKCIPHER_CRYPT_XTS     xtsDecFunc;
-    _Field_range_( 0, SYMCRYPT_MAX_BLOCK_SIZE ) SIZE_T                              blockSize;          // = SYMCRYPT_XXX_BLOCK_SIZE, power of 2, value <= 32.
+                                                PSYMCRYPT_BLOCKCIPHER_AEADPART_MODE gcmEncryptPartFunc; // NULL if no optimized version available
+                                                PSYMCRYPT_BLOCKCIPHER_AEADPART_MODE gcmDecryptPartFunc; // NULL if no optimized version available
+    _Field_range_( 1, SYMCRYPT_MAX_BLOCK_SIZE ) SIZE_T                              blockSize;          // = SYMCRYPT_XXX_BLOCK_SIZE, power of 2, 1 <= value <= 32.
                                                 SIZE_T                              expandedKeySize;    // = sizeof( SYMCRYPT_XXX_EXPANDED_KEY )
 };
 
 
 
+//
+// Session structs
+//
 
+#define SYMCRYPT_FLAG_SESSION_ENCRYPT       (0x1)
 
+//
+// SYMCRYPT_SESSION tracks the Nonces being used in a session. It is used differently depending on
+// whether the session is an Encryption session or a Decryption session.
+//
+// In Encryption sessions, SYMCRYPT_SESSION tracks the Nonce which was used in the most recent
+// attempted encryption in the session.
+// messageNumber is atomically incremented by each encryption call, and the encryption method uses
+// the messageNumber value that is the _result_ of the increment.
+//
+// In Decryption sessions, SYMCRYPT_SESSION tracks the most recently received Nonces in a series of
+// successful decryptions. Nonces used in unsuccessful decryption calls do not update SYMCRYPT_SESSION.
+// Information is tracked such that the decryption function can detect repeated Nonce values and
+// fail decryption in this case. In order for this to work the message numbers that are provided
+// to decrypt calls must be somewhat ordered. Provided message numbers may be arbitrarily far ahead
+// of previously successfully decrypted message numbers, but may only be up to 63 behind the highest
+// message number successfully decrypted so far.
+// messageNumber normally represents the highest message number used in a successful decryption in
+// this session. (The exception is at initialization, where messageNumber is initialized to 64
+// without the corresponding 0th bit in the replayMask being set - this initial state represents
+// there have been no successful decryptions yet, and that the earliest messageNumber that can be
+// successfully received is 1)
+// replayMask represents whether a window of 64 message numbers up to messageNumber have already been
+// successfully used;
+// bit n of replayMask (from n=0 to n=63) represents message number = (messageNumber-n), 0 means not
+// yet used, and 1 means already used in a successful decryption call
+//
+
+#if SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_ARM64
+#define SYMCRYPT_USE_CAS128 (1)
+
+// For CompareAndSwap128 method, SYMCRYPT_SESSION must be aligned to 16B
+#define SYMCRYPT_ALIGN_SESSION SYMCRYPT_ALIGN_TYPE_AT(struct, 16)
+#else
+#define SYMCRYPT_USE_CAS128 (0)
+
+// For method with only 64-bit atomics, SYMCRYPT_SESSION must be aligned to 8B
+#define SYMCRYPT_ALIGN_SESSION SYMCRYPT_ALIGN_TYPE_AT(struct, 8)
+#endif
+
+// Nested struct used within SYMCRYPT_SESSION
+typedef SYMCRYPT_ALIGN_SESSION _SYMCRYPT_SESSION_REPLAY_STATE {
+    UINT64  replayMask;
+    // 64 bit mask representing message numbers previously successfully decrypted up to 63
+    // before the most recent message number.
+
+    UINT64  messageNumber;
+    // the last 8 bytes of the Nonce (MSB-first)
+} SYMCRYPT_SESSION_REPLAY_STATE, * PSYMCRYPT_SESSION_REPLAY_STATE;
+typedef const SYMCRYPT_SESSION_REPLAY_STATE * PCSYMCRYPT_SESSION_REPLAY_STATE;
+
+typedef SYMCRYPT_ALIGN_SESSION _SYMCRYPT_SESSION {
+    SYMCRYPT_SESSION_REPLAY_STATE replayState;
+    // nested replayState struct is to improve code clarity in SymCryptSessionDecryptUpdate*
+
+    UINT32  senderId;
+    // the first 4 bytes of the Nonce (MSB-first)
+    // (set by the caller and constant for the lifetime of a session)
+
+    UINT32  flags;
+    // SYMCRYPT_FLAG_SESSION_ENCRYPT indicates the struct is to be used for an encryption session,
+    // otherwise the struct is to be used for a decryption session
+
+    PVOID   pMutex;
+    // Pointer to a fast single-process mutex object used to enable atomic update of replayMask and
+    // messageNumber in the absence of support for a 128b CAS operation
+} SYMCRYPT_SESSION, * PSYMCRYPT_SESSION;
+
+#define SYMCRYPT_SESSION_MAX_MESSAGE_NUMBER (0xffffffff00000000ull)
+// We do not allow messageNumber to go above some maximum value (currently 2^64 - 2^32)
+// This gives us a large window to prevent many concurrent encryption threads from updating the
+// session such that the messageNumber overflows and the same IV is used in many encryptions
+// (i.e. we would only potentially get a spurious success using a repeated IV when there are
+// >2^32 concurrent threads!)
+
+#if SYMCRYPT_USE_CAS128
+C_ASSERT(SYMCRYPT_FIELD_OFFSET(SYMCRYPT_SESSION, replayState.replayMask) == 0);
+C_ASSERT(SYMCRYPT_FIELD_OFFSET(SYMCRYPT_SESSION, replayState.messageNumber) == 8);
+// For CompareAndSwap128 method, replayMask and messageNumber must be tightly packed
+#endif
 
 //
 // RC4
@@ -1186,12 +2101,12 @@ struct _SYMCRYPT_BLOCKCIPHER {
 
 //
 // Some CPUs like the S array type to be larger than BYTE. We abstract the data type
-// of the S array to accomodate such CPUs in future.
+// of the S array to accommodate such CPUs in future.
 //
 
 typedef BYTE    SYMCRYPT_RC4_S_TYPE;
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_RC4_STATE {
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_RC4_STATE {
     SYMCRYPT_RC4_S_TYPE  S[256];
     BYTE i;
     BYTE j;
@@ -1202,7 +2117,7 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_RC4_STATE {
 // ChaCha20
 //
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_CHACHA20_STATE {
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_CHACHA20_STATE {
     UINT32      key[8];
     UINT32      nonce[3];
     UINT64      offset;                 // offset to use for next operation
@@ -1212,13 +2127,13 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_CHACHA20_STATE {
 
 
 //
-// AES_CTR_DRBG 
+// AES_CTR_DRBG
 //
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_RNG_AES_STATE {
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_RNG_AES_STATE {
     //
     // Key and V value are in one array, to allow fast generation of both of them
-    // in a single call. 
+    // in a single call.
     //
     BYTE        keyAndV[32 + 16];
     BYTE        previousBlock[16];
@@ -1227,7 +2142,7 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_RNG_AES_STATE {
     SYMCRYPT_MAGIC_FIELD
 } SYMCRYPT_RNG_AES_STATE, * PSYMCRYPT_RNG_AES_STATE;
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_RNG_AES_FIPS140_2_STATE {
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_RNG_AES_FIPS140_2_STATE {
     SYMCRYPT_RNG_AES_STATE  rng;
 } SYMCRYPT_RNG_AES_FIPS140_2_STATE, *PSYMCRYPT_RNG_AES_FIPS140_2_STATE;
 
@@ -1236,7 +2151,7 @@ typedef SYMCRYPT_ALIGN struct _SYMCRYPT_RNG_AES_FIPS140_2_STATE {
 // MARVIN32
 //
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_MARVIN32_EXPANDED_SEED
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_MARVIN32_EXPANDED_SEED
 {
     UINT32   s[2];
     SYMCRYPT_MAGIC_FIELD
@@ -1246,11 +2161,11 @@ typedef const SYMCRYPT_MARVIN32_EXPANDED_SEED * PCSYMCRYPT_MARVIN32_EXPANDED_SEE
 
 typedef SYMCRYPT_MARVIN32_EXPANDED_SEED SYMCRYPT_MARVIN32_CHAINING_STATE, * PSYMCRYPT_MARVIN32_CHAINING_STATE;
 
-typedef SYMCRYPT_ALIGN struct _SYMCRYPT_MARVIN32_STATE
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_MARVIN32_STATE
 {
     SYMCRYPT_ALIGN  BYTE                                buffer[8];  // 4 bytes of data, 4 more bytes for final padding
-                    SYMCRYPT_MARVIN32_CHAINING_STATE    chain;      // chaining state 
-                    PCSYMCRYPT_MARVIN32_EXPANDED_SEED   pSeed;      // 
+                    SYMCRYPT_MARVIN32_CHAINING_STATE    chain;      // chaining state
+                    PCSYMCRYPT_MARVIN32_EXPANDED_SEED   pSeed;      //
                     UINT32                              dataLength; // length of the data processed so far, mod 2^32
                     SYMCRYPT_MAGIC_FIELD
 } SYMCRYPT_MARVIN32_STATE, *PSYMCRYPT_MARVIN32_STATE;
@@ -1261,13 +2176,22 @@ typedef const SYMCRYPT_MARVIN32_STATE *PCSYMCRYPT_MARVIN32_STATE;
 // Export blob sizes
 //
 
-#define SYMCRYPT_MD2_STATE_EXPORT_SIZE      (80)
-#define SYMCRYPT_MD4_STATE_EXPORT_SIZE      (116)
-#define SYMCRYPT_MD5_STATE_EXPORT_SIZE      (116)
-#define SYMCRYPT_SHA1_STATE_EXPORT_SIZE     (120)
-#define SYMCRYPT_SHA256_STATE_EXPORT_SIZE   (132)
-#define SYMCRYPT_SHA384_STATE_EXPORT_SIZE   (236)
-#define SYMCRYPT_SHA512_STATE_EXPORT_SIZE   (236)
+#define SYMCRYPT_MD2_STATE_EXPORT_SIZE          (80)
+#define SYMCRYPT_MD4_STATE_EXPORT_SIZE          (116)
+#define SYMCRYPT_MD5_STATE_EXPORT_SIZE          (116)
+#define SYMCRYPT_SHA1_STATE_EXPORT_SIZE         (120)
+#define SYMCRYPT_SHA224_STATE_EXPORT_SIZE       (132)
+#define SYMCRYPT_SHA256_STATE_EXPORT_SIZE       (132)
+#define SYMCRYPT_SHA384_STATE_EXPORT_SIZE       (236)
+#define SYMCRYPT_SHA512_STATE_EXPORT_SIZE       (236)
+#define SYMCRYPT_SHA512_224_STATE_EXPORT_SIZE   (236)
+#define SYMCRYPT_SHA512_256_STATE_EXPORT_SIZE   (236)
+
+#define SYMCRYPT_KECCAK_STATE_EXPORT_SIZE   (234)
+#define SYMCRYPT_SHA3_224_STATE_EXPORT_SIZE SYMCRYPT_KECCAK_STATE_EXPORT_SIZE
+#define SYMCRYPT_SHA3_256_STATE_EXPORT_SIZE SYMCRYPT_KECCAK_STATE_EXPORT_SIZE
+#define SYMCRYPT_SHA3_384_STATE_EXPORT_SIZE SYMCRYPT_KECCAK_STATE_EXPORT_SIZE
+#define SYMCRYPT_SHA3_512_STATE_EXPORT_SIZE SYMCRYPT_KECCAK_STATE_EXPORT_SIZE
 
 
 //
@@ -1275,7 +2199,7 @@ typedef const SYMCRYPT_MARVIN32_STATE *PCSYMCRYPT_MARVIN32_STATE;
 //
 
 //
-// PBKDF2 
+// PBKDF2
 //
 
 typedef struct _SYMCRYPT_PBKDF2_EXPANDED_KEY {
@@ -1315,6 +2239,23 @@ typedef struct _SYMCRYPT_TLSPRF1_2_EXPANDED_KEY {
 typedef const SYMCRYPT_TLSPRF1_2_EXPANDED_KEY *PCSYMCRYPT_TLSPRF1_2_EXPANDED_KEY;
 
 //
+// SSH-KDF
+//
+typedef struct _SYMCRYPT_SSHKDF_EXPANDED_KEY {
+    PCSYMCRYPT_HASH     pHashFunc;
+    SYMCRYPT_HASH_STATE hashState;
+} SYMCRYPT_SSHKDF_EXPANDED_KEY, *PSYMCRYPT_SSHKDF_EXPANDED_KEY;
+typedef const SYMCRYPT_SSHKDF_EXPANDED_KEY *PCSYMCRYPT_SSHKDF_EXPANDED_KEY;
+
+//
+// SRTP-KDF
+//
+typedef struct _SYMCRYPT_SRTPKDF_EXPANDED_KEY {
+    SYMCRYPT_AES_EXPANDED_KEY     aesExpandedKey;
+} SYMCRYPT_SRTPKDF_EXPANDED_KEY, *PSYMCRYPT_SRTPKDF_EXPANDED_KEY;
+typedef const SYMCRYPT_SRTPKDF_EXPANDED_KEY *PCSYMCRYPT_SRTPKDF_EXPANDED_KEY;
+
+//
 // HKDF
 //
 
@@ -1325,12 +2266,21 @@ typedef struct _SYMCRYPT_HKDF_EXPANDED_KEY {
 typedef const SYMCRYPT_HKDF_EXPANDED_KEY *PCSYMCRYPT_HKDF_EXPANDED_KEY;
 
 //
+// SSKDF
+//
+typedef struct _SYMCRYPT_SSKDF_MAC_EXPANDED_SALT {
+    SYMCRYPT_MAC_EXPANDED_KEY   macKey;
+    PCSYMCRYPT_MAC              macAlg;
+} SYMCRYPT_SSKDF_MAC_EXPANDED_SALT, *PSYMCRYPT_SSKDF_MAC_EXPANDED_SALT;
+typedef const SYMCRYPT_SSKDF_MAC_EXPANDED_SALT *PCSYMCRYPT_SSKDF_MAC_EXPANDED_SALT;
+
+//
 // Digit & alignment sizes.
-// 
+//
 // WARNING: do not change these without updating all the optimized code,
 // including assembler code.
 // The FDEF_DIGIT_SIZE is the digit size used by the FDEF format.
-// 
+//
 #if SYMCRYPT_CPU_AMD64
 
 #define SYMCRYPT_FDEF_DIGIT_SIZE    64
@@ -1355,33 +2305,44 @@ typedef const SYMCRYPT_HKDF_EXPANDED_KEY *PCSYMCRYPT_HKDF_EXPANDED_KEY;
 // Object types for low-level API
 //
 // INT          integer in range 0..N for some N
-// DIVISOR      an integer > 0 that can be used to divide with. 
+// DIVISOR      an integer > 0 that can be used to divide with.
 // MODULUS      a value M > 1 to use in modulo-M computations
 // MODELEMENT   An element in a modulo-M ring.
 // ECPOINT      A point on an elliptic curve.
 //
 // These objects are all aligned to SYMCRYPT_ASYM_ALIGN
 //
+#define SYMCRYPT_ASYM_ALIGN SYMCRYPT_ALIGN_AT(SYMCRYPT_ASYM_ALIGN_VALUE)
+#if SYMCRYPT_MS_VC
+#define SYMCRYPT_ASYM_ALIGN_STRUCT SYMCRYPT_ASYM_ALIGN struct
+#elif SYMCRYPT_GNUC
+#define SYMCRYPT_ASYM_ALIGN_STRUCT struct SYMCRYPT_ASYM_ALIGN
+#else
+#error Unknown compiler
+#endif
 
-#define SYMCRYPT_ASYM_ALIGN  __declspec(align(SYMCRYPT_ASYM_ALIGN_VALUE))
-
-typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_INT   SYMCRYPT_INT;
+SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_INT;
+typedef struct _SYMCRYPT_INT   SYMCRYPT_INT;
 typedef       SYMCRYPT_INT * PSYMCRYPT_INT;
 typedef const SYMCRYPT_INT * PCSYMCRYPT_INT;
 
-typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_DIVISOR   SYMCRYPT_DIVISOR;
+SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_DIVISOR;
+typedef struct _SYMCRYPT_DIVISOR   SYMCRYPT_DIVISOR;
 typedef       SYMCRYPT_DIVISOR * PSYMCRYPT_DIVISOR;
 typedef const SYMCRYPT_DIVISOR * PCSYMCRYPT_DIVISOR;
 
-typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_MODULUS   SYMCRYPT_MODULUS;
+SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_MODULUS;
+typedef struct _SYMCRYPT_MODULUS   SYMCRYPT_MODULUS;
 typedef       SYMCRYPT_MODULUS * PSYMCRYPT_MODULUS;
 typedef const SYMCRYPT_MODULUS * PCSYMCRYPT_MODULUS;
 
-typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_MODELEMENT   SYMCRYPT_MODELEMENT;
+SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_MODELEMENT;
+typedef  struct _SYMCRYPT_MODELEMENT   SYMCRYPT_MODELEMENT;
 typedef       SYMCRYPT_MODELEMENT * PSYMCRYPT_MODELEMENT;
 typedef const SYMCRYPT_MODELEMENT * PCSYMCRYPT_MODELEMENT;
 
-typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_ECPOINT   SYMCRYPT_ECPOINT;
+SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_ECPOINT;
+typedef struct _SYMCRYPT_ECPOINT   SYMCRYPT_ECPOINT;
 typedef       SYMCRYPT_ECPOINT * PSYMCRYPT_ECPOINT;
 typedef const SYMCRYPT_ECPOINT * PCSYMCRYPT_ECPOINT;
 
@@ -1391,15 +2352,23 @@ typedef const SYMCRYPT_ECPOINT * PCSYMCRYPT_ECPOINT;
 //
 
 #define SYMCRYPT_ANYSIZE    1       // used to mark arrays of arbitrary size
-#define SYMCRYPT_FIELD_OFFSET(type, field)      ((ULONG)(ULONG_PTR)&(((type *)0)->field))
-#define SYMCRYPT_FIELD_SIZE(type, field)        (sizeof( ((type *)0)->field ))
-
 
 #define SYMCRYPT_FDEF_DIGIT_BITS    (8*SYMCRYPT_FDEF_DIGIT_SIZE)
 #define SYMCRYPT_FDEF_DIGITS_FROM_BITS( _bits )   ( \
                                                    ((_bits)/ SYMCRYPT_FDEF_DIGIT_BITS) + \
                                                    (( ((_bits) & (SYMCRYPT_FDEF_DIGIT_BITS-1)) + (SYMCRYPT_FDEF_DIGIT_BITS - 1) )/SYMCRYPT_FDEF_DIGIT_BITS) \
                                                   )
+
+#define SYMCRYPT_BYTES_FROM_BITS(bits)          ( ( (bits) + 7 ) / 8 )
+
+// The maximum number of bits in any integer value that the library supports. If the
+// caller's input exceed this bound then the integer object will not be created.
+// The caller either must ensure the bound is not exceeded, or check for NULL before
+// using created SymCrypt objects.
+// The primary purpose of this limit is to avoid integer overflows in size computations.
+// Having a reasonable upper bound avoids all size overflows, even on 32-bit CPUs
+#define SYMCRYPT_INT_MAX_BITS       ((UINT32)(1 << 20))
+
 //
 // Upper bound for the number of digits: this MUST be enforced on runtime
 // on all Allocate, SizeOf, and Create calls which take as input a digit number.
@@ -1429,17 +2398,17 @@ typedef const SYMCRYPT_ECPOINT * PCSYMCRYPT_ECPOINT;
 
 //
 // Type fields contain the following:
-// lower 16 bits: offset into virtual table table (if any)
+// lower 16 bits: offset into virtual table (if any)
 // upper 16 bits: bits 16-23: 1-character object type. Bits 24-31: 1 char implementation type
 // The upper bits allow objects to be recognized in memory, making debugging easier.
 //
 
-SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_INT {
-    UINT32                  type;
-    UINT32                  nDigits;                    // digit size depends on run-time decisions...
-    UINT32                  cbSize;                     // currently unused
-    SYMCRYPT_MAGIC_FIELD
+SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_INT {
+                                                    UINT32  type;
+    _Field_range_( 1, SYMCRYPT_FDEF_UPB_DIGITS )    UINT32  nDigits;    // digit size depends on run-time decisions...
+                                                    UINT32  cbSize;
 
+    SYMCRYPT_MAGIC_FIELD
     SYMCRYPT_ASYM_ALIGN union {
         struct {
             UINT32          uint32[SYMCRYPT_ANYSIZE];   // FDEF: array UINT32[nDigits * # uint32 per digit]
@@ -1453,14 +2422,14 @@ SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_INT {
 #define SYMCRYPT_FDEF_SIZEOF_INT_FROM_DIGITS( _nDigits )    ((_nDigits) * SYMCRYPT_FDEF_DIGIT_SIZE + sizeof( SYMCRYPT_INT ) )
 #define SYMCRYPT_FDEF_SIZEOF_INT_FROM_BITS( _bits )         SYMCRYPT_FDEF_SIZEOF_INT_FROM_DIGITS( SYMCRYPT_FDEF_DIGITS_FROM_BITS( _bits ))
 
-SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_DIVISOR {
-    UINT32                  type;
-    UINT32                  nDigits;                    // digit size depends on run-time decisions...
-    UINT32                  cbSize;                     
+SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_DIVISOR {
+                                                    UINT32  type;
+    _Field_range_( 1, SYMCRYPT_FDEF_UPB_DIGITS )    UINT32  nDigits;    // digit size depends on run-time decisions...
+                                                    UINT32  cbSize;
 
-    UINT32                  nBits;                  // # bits in divisor
+                                                    UINT32  nBits;      // # bits in divisor
+
     SYMCRYPT_MAGIC_FIELD
-
     union{
         struct {
             UINT64                  W;              // approximate inverse of the divisor. Some implementations will use 64 bits, others 32 bits.
@@ -1473,19 +2442,19 @@ SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_DIVISOR {
 #define SYMCRYPT_FDEF_SIZEOF_DIVISOR_FROM_DIGITS( _nDigits ) ((_nDigits) * SYMCRYPT_FDEF_DIGIT_SIZE + sizeof( SYMCRYPT_DIVISOR ) )
 #define SYMCRYPT_FDEF_SIZEOF_DIVISOR_FROM_BITS( _bits ) SYMCRYPT_FDEF_SIZEOF_DIVISOR_FROM_DIGITS( SYMCRYPT_FDEF_DIGITS_FROM_BITS( _bits ))
 
-SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_MODULUS {
-    UINT32                  type;
-    UINT32                  nDigits;                    // digit size depends on run-time decisions...
-    UINT32                  cbSize;                     // Size of modulus object
+SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_MODULUS {
+                                                    UINT32  type;
+    _Field_range_( 1, SYMCRYPT_FDEF_UPB_DIGITS )    UINT32  nDigits;        // digit size depends on run-time decisions...
+                                                    UINT32  cbSize;         // Size of modulus object
 
-    UINT32                  flags;          // The flag the modulus was created with
-    UINT32                  cbModElement;   // size of one modElement
+                                                    UINT32  flags;          // The flags the modulus was created with
+                                                    UINT32  cbModElement;   // Size of one modElement
+                                                    UINT64  inv64;          // -1/modulus mod 2^64 (always set but only to a useful value when the modulus is odd)
 
     SYMCRYPT_MAGIC_FIELD
     union{
         struct {
-            UINT64          inv64;          // 1/modulus mod 2^64
-            //UINT32          nUint32Used;    // # 32-bit words used in representing numbers. modulus < 2^{32*nUint32Used}. 
+            //UINT32          nUint32Used;    // # 32-bit words used in representing numbers. modulus < 2^{32*nUint32Used}.
                                             // only values used are nDigits * uint32-per-digit or specific smaller values for optimized implementations
             PCUINT32        Rsqr;           // R^2 mod modulus, in uint32 form, nUint32Used words. Stored after Divisor. R = 2^{32*nUint32Used}
         } montgomery;
@@ -1499,12 +2468,13 @@ SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_MODULUS {
     //  The extensions of the Divisor object
     // and after that:
     // FDEF: Rsqr as an array of UINT32, size = nDigits * digitsize
+    // FDEF: negDivisor as an array of UINT32, size = nDigits * digitsize
 };
 
-#define SYMCRYPT_FDEF_SIZEOF_MODULUS_FROM_DIGITS( _nDigits )    (sizeof( SYMCRYPT_MODULUS ) + SYMCRYPT_FDEF_SIZEOF_DIVISOR_FROM_DIGITS( _nDigits ) + _nDigits * SYMCRYPT_FDEF_DIGIT_SIZE )
+#define SYMCRYPT_FDEF_SIZEOF_MODULUS_FROM_DIGITS( _nDigits )    (sizeof( SYMCRYPT_MODULUS ) + SYMCRYPT_FDEF_SIZEOF_DIVISOR_FROM_DIGITS( _nDigits ) + (2 * _nDigits * SYMCRYPT_FDEF_DIGIT_SIZE) )
 #define SYMCRYPT_FDEF_SIZEOF_MODULUS_FROM_BITS( _bits )         SYMCRYPT_FDEF_SIZEOF_MODULUS_FROM_DIGITS(SYMCRYPT_FDEF_DIGITS_FROM_BITS( _bits ))
 
-SYMCRYPT_ALIGN struct _SYMCRYPT_MODELEMENT {
+SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_MODELEMENT {
     // ModElements just store the information without any header. This union makes this well-defined, and allows easy access.
     union{
         UINT32    uint32[SYMCRYPT_ANYSIZE];
@@ -1519,7 +2489,7 @@ SYMCRYPT_ALIGN struct _SYMCRYPT_MODELEMENT {
 //
 // The following 14 scratch size computation macros are all of the form:
 //      Some SIZEOF macros + max( some other scratch macros )
-// and all depend on some number of digits. (Slight expceptions are
+// and all depend on some number of digits. (Slight exceptions are
 // INT_TO_MODULUS and INT_PRIME_GEN but they can fit into the below
 // rationale.)
 //
@@ -1547,8 +2517,8 @@ SYMCRYPT_ALIGN struct _SYMCRYPT_MODELEMENT {
             4 * SYMCRYPT_FDEF_SIZEOF_INT_FROM_DIGITS( _nDigits ) + \
             SYMCRYPT_FDEF_SIZEOF_INT_FROM_DIGITS( 2 * _nDigits ) + \
             2 * SYMCRYPT_FDEF_SIZEOF_DIVISOR_FROM_DIGITS( _nDigits ) + \
-            max( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_DIVMOD( 2 * _nDigits, _nDigits ), \
-            max( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_MUL( 2 * _nDigits ), \
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_DIVMOD( 2 * _nDigits, _nDigits ), \
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_MUL( 2 * _nDigits ), \
                  SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_TO_DIVISOR( _nDigits ) )) )
 
 #define SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( _nModDigits ) \
@@ -1557,18 +2527,18 @@ SYMCRYPT_ALIGN struct _SYMCRYPT_MODELEMENT {
 
 #define SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_CRT_GENERATION( _nDigits ) ( \
             2*SYMCRYPT_FDEF_SIZEOF_INT_FROM_DIGITS( _nDigits ) + \
-            max( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_EXTENDED_GCD( _nDigits ), \
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_EXTENDED_GCD( _nDigits ), \
                  SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( _nDigits ) ))
 
 #define SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_CRT_SOLUTION( _nDigits ) ( \
             SYMCRYPT_FDEF_SIZEOF_INT_FROM_DIGITS( _nDigits ) + \
             SYMCRYPT_FDEF_SIZEOF_MODELEMENT_FROM_DIGITS( _nDigits ) + \
             SYMCRYPT_FDEF_SIZEOF_INT_FROM_DIGITS( 2*_nDigits ) + \
-            max( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( _nDigits ), \
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( _nDigits ), \
                  SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_MUL( 2*_nDigits ) ))
 
 #define SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_TO_MODULUS( _nDigits )  ( \
-            max( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_TO_DIVISOR( _nDigits ),\
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_TO_DIVISOR( _nDigits ),\
                 (2*_nDigits+1) * SYMCRYPT_FDEF_DIGIT_SIZE + SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_DIVMOD( 2*_nDigits + 1, nDigits )) )
 
 #define SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_MODINV( _nModDigits ) ( \
@@ -1588,21 +2558,21 @@ SYMCRYPT_ALIGN struct _SYMCRYPT_MODELEMENT {
             SYMCRYPT_FDEF_SIZEOF_MODULUS_FROM_DIGITS(_nDigits) + \
             3*SYMCRYPT_FDEF_SIZEOF_MODELEMENT_FROM_DIGITS(_nDigits) + \
             SYMCRYPT_FDEF_SIZEOF_INT_FROM_DIGITS(_nDigits) + \
-            max( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_TO_MODULUS(_nDigits), \
-            max( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS(_nDigits), \
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_TO_MODULUS(_nDigits), \
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS(_nDigits), \
                  SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_MODEXP( _nDigits ) )) )
 
 #define SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_IS_PRIME( _nDigits ) ( \
-            max( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_IS_POTENTIAL_PRIME( _nDigits ), \
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_IS_POTENTIAL_PRIME( _nDigits ), \
                  SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_MILLER_RABIN( _nDigits ) ))
 
 #define SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_PRIME_GEN( _nDigits ) ( \
             SYMCRYPT_RSAKEY_MAX_NUMOF_PUBEXPS * SYMCRYPT_FDEF_SIZEOF_DIVISOR_FROM_DIGITS( 1 ) + \
             SYMCRYPT_FDEF_SIZEOF_INT_FROM_DIGITS( 1 ) + \
-            max( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_TO_DIVISOR( 1 ), \
-            max( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_DIVMOD( _nDigits, 1 ), \
-            max( SYMCRYPT_FDEF_SIZEOF_INT_FROM_DIGITS( _nDigits ), \
-            max( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_IS_POTENTIAL_PRIME( _nDigits ), \
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_TO_DIVISOR( 1 ), \
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_DIVMOD( _nDigits, 1 ), \
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SIZEOF_INT_FROM_DIGITS( _nDigits ), \
+            SYMCRYPT_MAX( SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_IS_POTENTIAL_PRIME( _nDigits ), \
                  SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_INT_MILLER_RABIN( _nDigits ) )))))
 
 //
@@ -1617,7 +2587,7 @@ SYMCRYPT_ALIGN struct _SYMCRYPT_MODELEMENT {
     SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_COMMON_MOD_OPERATIONS( _nModDigits ) + \
     ((_nBases)*(1<<SYMCRYPT_FDEF_MAX_WINDOW_MODEXP) + 4)*SYMCRYPT_FDEF_SIZEOF_MODELEMENT_FROM_DIGITS( _nModDigits ) + \
     (((_nBases)*(_nBitsExp)*sizeof(UINT32) + SYMCRYPT_ASYM_ALIGN_VALUE - 1) & ~(SYMCRYPT_ASYM_ALIGN_VALUE - 1)) )
-// Note: We need +4 mutliplied with SYMCRYPT_FDEF_SIZEOF_MODELEMENT_FROM_DIGITS so that SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_MODMULTIEXP
+// Note: We need +4 multiplied with SYMCRYPT_FDEF_SIZEOF_MODELEMENT_FROM_DIGITS so that SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_MODMULTIEXP
 // is always at least 2 modelements bigger than SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_MODEXP (see modexp.c)
 
 //
@@ -1661,6 +2631,21 @@ SYMCRYPT_ALIGN struct _SYMCRYPT_MODELEMENT {
 
 #define SYMCRYPT_INTERNAL_SCRATCH_BYTES_FOR_MODMULTIEXP( _nModDigits, _nBases, _nBitsExp )  SYMCRYPT_FDEF_SCRATCH_BYTES_FOR_MODMULTIEXP( _nModDigits, _nBases, _nBitsExp )
 
+//
+// Forward declarations for MlKemkey types
+//
+SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_MLKEMKEY;
+typedef struct _SYMCRYPT_MLKEMKEY SYMCRYPT_MLKEMKEY;
+typedef       SYMCRYPT_MLKEMKEY * PSYMCRYPT_MLKEMKEY;
+typedef const SYMCRYPT_MLKEMKEY * PCSYMCRYPT_MLKEMKEY;
+
+//
+// Forward declarations for MlDsakey types
+//
+struct _SYMCRYPT_MLDSAKEY;
+typedef struct _SYMCRYPT_MLDSAKEY SYMCRYPT_MLDSAKEY;
+typedef       SYMCRYPT_MLDSAKEY * PSYMCRYPT_MLDSAKEY;
+typedef const SYMCRYPT_MLDSAKEY * PCSYMCRYPT_MLDSAKEY;
 
 //
 // RSA padding scratch definitions
@@ -1698,22 +2683,33 @@ SYMCRYPT_ALIGN struct _SYMCRYPT_MODELEMENT {
 #define SYMCRYPT_RSAKEY_MAX_NUMOF_PRIMES            (2)
 #define SYMCRYPT_RSAKEY_MAX_NUMOF_PUBEXPS           (1)
 
-#define SYMCRYPT_RSAKEY_MIN_BITSIZE_MODULUS         (64)                // Just to avoid weird small-int cases
+#define SYMCRYPT_RSAKEY_MIN_BITSIZE_MODULUS         (256)               // Some of our SCS code requires at least 32 bytes...
 #define SYMCRYPT_RSAKEY_MAX_BITSIZE_MODULUS         (1 << 16)           // Avoid any integer overflows in size calculations
-#define SYMCRYPT_RSAKEY_MIN_BITSIZE_PRIME           (32)
+
+// RSA FIPS self-tests require at least 496 bits to avoid fatal
+// Require caller to specify NO_FIPS for up to 1024 bits as running FIPS tests on too-small keys
+// does not make it FIPS certifiable and gives the wrong impression to callers
+#define SYMCRYPT_RSAKEY_FIPS_MIN_BITSIZE_MODULUS    (1024)
+
+#define SYMCRYPT_RSAKEY_MIN_BITSIZE_PRIME           (128)
 #define SYMCRYPT_RSAKEY_MAX_BITSIZE_PRIME           (SYMCRYPT_RSAKEY_MAX_BITSIZE_MODULUS / 2)
 
 // Minimum allowable bit sizes for generated and imported parameters for
 // the RSA modulus and each prime.
 
-typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_RSAKEY {
+typedef SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_RSAKEY {
+                    UINT32              fAlgorithmInfo;     // Tracks which algorithms the key can be used in
+                                                            // Also tracks which per-key selftests have been performed on this key
+                                                            // A bitwise OR of SYMCRYPT_FLAG_KEY_*, SYMCRYPT_FLAG_RSAKEY_*, and
+                                                            // SYMCRYPT_PCT_* values
+
                     UINT32              cbTotalSize;        // Total size of the rsa key
                     BOOLEAN             hasPrivateKey;      // Set to true if there is private key information set
 
                     UINT32              nSetBitsOfModulus;  // Bits of modulus specified during creation
 
                     UINT32              nBitsOfModulus;     // Number of bits of the value of the modulus (not the object's size)
-                    UINT32              nDigitsOfModulus;   // Number of digits of the modulus object (alwaays equal to SymCryptDigitsFromBits(nSetBitsOfModulus))
+                    UINT32              nDigitsOfModulus;   // Number of digits of the modulus object (always equal to SymCryptDigitsFromBits(nSetBitsOfModulus))
 
                     UINT32              nPubExp;            // Number of public exponents
 
@@ -1754,7 +2750,7 @@ typedef       SYMCRYPT_RSAKEY * PSYMCRYPT_RSAKEY;
 typedef const SYMCRYPT_RSAKEY * PCSYMCRYPT_RSAKEY;
 
 //
-// The following definitions relating to trial divisoin are not needed by normal callers
+// The following definitions relating to trial division are not needed by normal callers
 // but are used by the test program to measure performance of components.
 //
 
@@ -1774,7 +2770,7 @@ typedef const SYMCRYPT_TRIALDIVISION_PRIME * PCSYMCRYPT_TRIALDIVISION_PRIME;
 typedef struct _SYMCRYPT_TRIALDIVISION_GROUP {
     UINT32  nPrimes;       // # primes are in this group (use the next ones)
     UINT32  factor[9];     // factors[i] = 2^{32*(i+1)} mod Prod where Prod = product of the primes
-                           // It is guaranteed that Prod <= (2^{32}-1)/9 
+                           // It is guaranteed that Prod <= (2^{32}-1)/9
 } SYMCRYPT_TRIALDIVISION_GROUP, *PSYMCRYPT_TRIALDIVISION_GROUP;
 typedef const SYMCRYPT_TRIALDIVISION_GROUP * PCSYMCRYPT_TRIALDIVISION_GROUP;
 
@@ -1784,7 +2780,7 @@ typedef struct _SYMCRYPT_TRIALDIVISION_CONTEXT {
     UINT32                          maxTrialPrime;
     PSYMCRYPT_TRIALDIVISION_GROUP   pGroupList; // terminated with 0 record
     PSYMCRYPT_TRIALDIVISION_PRIME   pPrimeList; // terminated with 0 record
-    PUINT32                         pPrimes;    // terminated with a 0. 
+    PUINT32                         pPrimes;    // terminated with a 0.
     SYMCRYPT_TRIALDIVISION_PRIME    Primes3_5_17[3];    // Structures for 3, 5 and 17 in that order
 } SYMCRYPT_TRIALDIVISION_CONTEXT, *PSYMCRYPT_TRIALDIVISION_CONTEXT;
 typedef const SYMCRYPT_TRIALDIVISION_CONTEXT * PCSYMCRYPT_TRIALDIVISION_CONTEXT;
@@ -1797,51 +2793,57 @@ SymCryptTestTrialdivisionMaxSmallPrime( PCSYMCRYPT_TRIALDIVISION_CONTEXT pContex
 //
 
 #define SYMCRYPT_DLGROUP_MIN_BITSIZE_P          (32)
-#define SYMCRYPT_DLGROUP_MIN_BITSIZE_Q          (32)
+#define SYMCRYPT_DLGROUP_MIN_BITSIZE_Q          (31)  // Q must always be at least 1 bit shorter than P
 // Minimum allowable bit sizes for generated and imported parameters for both P and
 // Q primes.
 
-typedef enum _SYMCRYPT_DLGROUP_FIPS SYMCRYPT_DLGROUP_FIPS;
+typedef SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_DLGROUP {
+    UINT32                  cbTotalSize;    // Total size of the dl group object
+    BOOLEAN                 fHasPrimeQ;     // Flag that specifies whether the object has a Q parameter
 
-typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_DLGROUP {
-                    UINT32                  cbTotalSize;    // Total size of the dl group object
-                    BOOLEAN                 fHasPrimeQ;     // Flag that specifies whether the object has a Q parameter
+    UINT32                  nBitsOfP;       // Number of bits of the value of P (not the object's size)
+    UINT32                  cbPrimeP;       // Number of bytes of the value of P (not the object's size), equal to ceil(nBitsOfP/8)
+    UINT32                  nDigitsOfP;     // Number of digits of the object of prime P
+    UINT32                  nMaxBitsOfP;    // Maximum number of bits of the value of P
 
-                    UINT32                  nBitsOfP;       // Number of bits of the value of P (not the object's size)
-                    UINT32                  cbPrimeP;       // Number of bytes of the value of P (not the object's size), equal to ceil(nBitsOfP/8)
-                    UINT32                  nDigitsOfP;     // Number of digits of the object of prime P
-                    UINT32                  nMaxBitsOfP;    // Maximum number of bits of the value of P
+    UINT32                  nBitsOfQ;       // Number of bits of the value of Q (not the object's bits)
+    UINT32                  cbPrimeQ;       // Number of bytes of the value of Q (not the object's size), equal to ceil(nBitsOfQ/8)
+    UINT32                  nDigitsOfQ;     // Number of digits of the object of prime Q
+    UINT32                  nMaxBitsOfQ;    // Maximum number of bits of the value of Q
 
-                    UINT32                  nBitsOfQ;       // Number of bits of the value of Q (not the object's bits)
-                    UINT32                  cbPrimeQ;       // Number of bytes of the value of Q (not the object's size), equal to ceil(nBitsOfQ/8)
-                    UINT32                  nDigitsOfQ;     // Number of digits of the object of prime Q
-                    UINT32                  nMaxBitsOfQ;    // Maximum number of bits of the value of Q
+    BOOLEAN                 isSafePrimeGroup;   // Boolean indicating if this is a Safe Prime group
+    UINT32                  nMinBitsPriv;   // Minimum number of bits to be used in private keys for this group
+                                            // This only applies to named Safe Prime groups where this is related to the security strength
+                                            // i.e. this corresponds to 2s in SP800-56arev3 5.6.1.1.1 / 5.6.2.1.2
+    UINT32                  nDefaultBitsPriv;   // Default number of bits used in private keys for this group
+                                                // Normally equals nBitsOfQ, but may be further restricted (i.e. for named Safe Prime groups)
+                                                // i.e. this corresponds to a default value of N in SP800-56arev3 5.6.1.1.1 / 5.6.2.1.2
 
-                    UINT32                  nBitsOfSeed;    // Number of bits of the seed used for generation (seedlen in FIPS 186-3)
-                    UINT32                  cbSeed;         // Number of bytes of the seed, equal to ceil(nBitsOfSeed/8)
+    UINT32                  nBitsOfSeed;    // Number of bits of the seed used for generation (seedlen in FIPS 186-3)
+    UINT32                  cbSeed;         // Number of bytes of the seed, equal to ceil(nBitsOfSeed/8)
 
-                    SYMCRYPT_DLGROUP_FIPS   eFipsStandard;  // Code specifying the FIPS standard used to create the keys. If 0 the group is unverified.
+    SYMCRYPT_DLGROUP_FIPS   eFipsStandard;  // Code specifying the FIPS standard used to create the keys. If 0 the group is unverified.
 
-                    PCSYMCRYPT_HASH         pHashAlgorithm; // Hash algorithm used for the generation of parameters
-                    UINT32                  dwGenCounter;   // Number of iterations used for the generation of parameters
-                    BYTE                    bIndexGenG;     // Index for the generation of generator G (FIPS 186-3) (Always 1 for now)
+    PCSYMCRYPT_HASH         pHashAlgorithm; // Hash algorithm used for the generation of parameters
+    UINT32                  dwGenCounter;   // Number of iterations used for the generation of parameters
+    BYTE                    bIndexGenG;     // Index for the generation of generator G (FIPS 186-3) (Always 1 for now)
 
-                    PBYTE                   pbQ;            // SYMCRYPT_ASYM_ALIGN'ed buffer that points to the memory allocated for modulus Q
+    PBYTE                   pbQ;            // SYMCRYPT_ASYM_ALIGN'ed buffer that points to the memory allocated for modulus Q
 
-                    PSYMCRYPT_MODULUS       pmP;            // Pointer to the prime P
-                    PSYMCRYPT_MODULUS       pmQ;            // Pointer to the prime Q
+    PSYMCRYPT_MODULUS       pmP;            // Pointer to the prime P
+    PSYMCRYPT_MODULUS       pmQ;            // Pointer to the prime Q
 
-                    PSYMCRYPT_MODELEMENT    peG;            // Pointer to the generator G
+    PSYMCRYPT_MODELEMENT    peG;            // Pointer to the generator G
 
-                    PBYTE                   pbSeed;         // Buffer that will hold the seed (this is padded at the end so that the entire structure
-                                                            // has size a multiple of SYMCRYPT_ASYM_ALIGN_VALUE)
+    PBYTE                   pbSeed;         // Buffer that will hold the seed (this is padded at the end so that the entire structure
+                                            // has size a multiple of SYMCRYPT_ASYM_ALIGN_VALUE)
 
-                    SYMCRYPT_MAGIC_FIELD
+    SYMCRYPT_MAGIC_FIELD
 
-                    // P
-                    // Q
-                    // G
-                    // Seed
+    // P
+    // Q
+    // G
+    // Seed
 } SYMCRYPT_DLGROUP;
 typedef       SYMCRYPT_DLGROUP * PSYMCRYPT_DLGROUP;
 typedef const SYMCRYPT_DLGROUP * PCSYMCRYPT_DLGROUP;
@@ -1849,29 +2851,34 @@ typedef const SYMCRYPT_DLGROUP * PCSYMCRYPT_DLGROUP;
 //
 // DLKEY type
 //
-typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_DLKEY {
-                    PCSYMCRYPT_DLGROUP      pDlgroup;       // Handle to the group which created the key
+typedef SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_DLKEY {
+                    UINT32                  fAlgorithmInfo; // Tracks which algorithms the key can be used in
+                                                            // Also tracks which per-key selftests have been performed on this key
+                                                            // A bitwise OR of SYMCRYPT_FLAG_KEY_*, SYMCRYPT_FLAG_DLKEY_*, and
+                                                            // SYMCRYPT_PCT_* values
 
                     BOOLEAN                 fHasPrivateKey; // Set to true if there is a private key set
                     BOOLEAN                 fPrivateModQ;   // Set to true if the private key is at most Q-1, otherwise it is at most P-2
+                    UINT32                  nBitsPriv;      // Number of bits used in private keys
+
+                    PCSYMCRYPT_DLGROUP      pDlgroup;       // Handle to the group which created the key
 
                     PBYTE                   pbPrivate;      // SYMCRYPT_ASYM_ALIGN'ed buffer that points to the memory allocated for the private key
 
                     PSYMCRYPT_MODELEMENT    pePublicKey;    // Public key (modelement modulo P)
-                    PSYMCRYPT_INT           piPrivateKey;   // Private key (integer up to Q-1 or P-2)
+                    PSYMCRYPT_INT           piPrivateKey;   // Private key (integer up to 2^nBitsPriv-1, Q-1 or P-2)
 
                     SYMCRYPT_MAGIC_FIELD
 
                     // PublicKey
                     // PrivateKey                           // The size of this must always be the same as the size of P
 } SYMCRYPT_DLKEY;
+typedef       SYMCRYPT_DLKEY * PSYMCRYPT_DLKEY;
+typedef const SYMCRYPT_DLKEY * PCSYMCRYPT_DLKEY;
 
 //
 // Elliptic Curve Function Types
 //
-
-typedef enum _SYMCRYPT_ECURVE_TYPE      SYMCRYPT_ECURVE_TYPE;
-typedef enum _SYMCRYPT_ECPOINT_FORMAT   SYMCRYPT_ECPOINT_FORMAT;
 
 #define SYMCRYPT_ECPOINT_FORMAT_MAX_LENGTH                      4   // Number of MODELEMENTs for the largest ECPOINT format
 
@@ -1883,21 +2890,12 @@ typedef enum _SYMCRYPT_ECPOINT_COORDINATES {
     SYMCRYPT_ECPOINT_COORDINATES_AFFINE              = 0x22,   // Affine representation (X,Y)
     SYMCRYPT_ECPOINT_COORDINATES_PROJECTIVE          = 0x33,   // Three equally-sized values where the triple (X,Y,Z) represents the affine point (X/Z, Y/Z)
     SYMCRYPT_ECPOINT_COORDINATES_JACOBIAN            = 0x43,   // Three equally-sized values where the triple (X,Y,Z) represents the affine point (X/Z^2, Y/Z^3)
-    SYMCRYPT_ECPOINT_COORDINATES_EXTENDED_PROJECTIVE = 0x54,   // Four equally-sized values where (X,Y,Z,T) represents the affine point (X/Z, Y/Z)
+    SYMCRYPT_ECPOINT_COORDINATES_EXTENDED_PROJECTIVE = 0x54,   // Four equally-sized values where (X,Y,Z,T) represents the affine point (X/Z, Y/Z) with T=X*Y*Z
     SYMCRYPT_ECPOINT_COORDINATES_SINGLE_PROJECTIVE   = 0x62,   // Two equally-sized values where (X,Z) represents the point (X/Z)
 } SYMCRYPT_ECPOINT_COORDINATES;
 
 #define SYMCRYPT_INTERNAL_NUMOF_COORDINATES( _eCoordinates )              ((_eCoordinates) & 0xf)
 
-typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_ECPOINT {
-                    UINT32     normalized;          // A flag specifying whether the point is normalized or not. This flag 
-                                                    // makes sense only for PROJECTIVE, JACOBIAN, EXTENDED_PROJECTIVE, and
-                                                    // SINGLE_PROJECTIVE coordinates. If set to TRUE (non-zero), it means
-                                                    // that the Z coordinate of the point is equal to 1.
-                    SYMCRYPT_MAGIC_FIELD
-                    // An array of MODELEMENTs. The total size will depend on the MODELEMENT size and the number of MODELEMENTs.
-} SYMCRYPT_ECPOINT, *PSYMCRYPT_ECPOINT;
-typedef const SYMCRYPT_ECPOINT * PCSYMCRYPT_ECPOINT;
 
 //
 // Curve-type-dependent information
@@ -1929,11 +2927,23 @@ typedef struct _SYMCRYPT_ECURVE_INFO_PRECOMP {
 
 #define SYMCRYPT_INTERNAL_ECURVE_VERSION_LATEST                         1
 
-typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_ECURVE {
-                    UINT32                  version;        // Version #
-                    SYMCRYPT_ECURVE_TYPE    type;           // Type of the curve
+typedef enum _SYMCRYPT_INTERNAL_ECURVE_TYPE {
+    SYMCRYPT_INTERNAL_ECURVE_TYPE_SHORT_WEIERSTRASS     = 1,
+    SYMCRYPT_INTERNAL_ECURVE_TYPE_TWISTED_EDWARDS       = 2,
+    SYMCRYPT_INTERNAL_ECURVE_TYPE_MONTGOMERY            = 3,
+    SYMCRYPT_INTERNAL_ECURVE_TYPE_SHORT_WEIERSTRASS_AM3 = 4,// This type is a specialization of Short-Weierstrass when A == -3
+                                                            // This condition is detected and used for all NIST prime curves
+} SYMCRYPT_INTERNAL_ECURVE_TYPE;
 
-                    SYMCRYPT_ECPOINT_COORDINATES    
+C_ASSERT((UINT32)SYMCRYPT_INTERNAL_ECURVE_TYPE_SHORT_WEIERSTRASS   == (UINT32)SYMCRYPT_ECURVE_TYPE_SHORT_WEIERSTRASS );
+C_ASSERT((UINT32)SYMCRYPT_INTERNAL_ECURVE_TYPE_TWISTED_EDWARDS     == (UINT32)SYMCRYPT_ECURVE_TYPE_TWISTED_EDWARDS );
+C_ASSERT((UINT32)SYMCRYPT_INTERNAL_ECURVE_TYPE_MONTGOMERY          == (UINT32)SYMCRYPT_ECURVE_TYPE_MONTGOMERY );
+
+typedef SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_ECURVE {
+                    UINT32                  version;        // Version #
+                    SYMCRYPT_INTERNAL_ECURVE_TYPE
+                                            type;           // Internal type of the curve
+                    SYMCRYPT_ECPOINT_COORDINATES
                                             eCoordinates;   // Default representation of the EC points
 
                     UINT32                  FModBitsize;    // Bitsize of the field modulus
@@ -1991,6 +3001,17 @@ typedef const SYMCRYPT_ECURVE * PCSYMCRYPT_ECURVE;
 #define SYMCRYPT_INTERNAL_ECPOINT_COORDINATE_OFFSET( _pCurve, _ord )        ( sizeof(SYMCRYPT_ECPOINT) + (_ord) * (_pCurve)->cbModElement )
 #define SYMCRYPT_INTERNAL_ECPOINT_COORDINATE( _ord, _pCurve, _pEcpoint )    (PSYMCRYPT_MODELEMENT)( (PBYTE)(_pEcpoint) + SYMCRYPT_INTERNAL_ECPOINT_COORDINATE_OFFSET( (_pCurve), _ord ) )
 
+// Convenience macros to make adding internal specializations easier
+#define SYMCRYPT_CURVE_IS_SHORT_WEIERSTRASS_TYPE( _pCurve ) \
+    ( _pCurve->type == SYMCRYPT_INTERNAL_ECURVE_TYPE_SHORT_WEIERSTRASS || \
+      _pCurve->type == SYMCRYPT_INTERNAL_ECURVE_TYPE_SHORT_WEIERSTRASS_AM3 )
+
+#define SYMCRYPT_CURVE_IS_TWISTED_EDWARDS_TYPE( _pCurve ) \
+    ( _pCurve->type == SYMCRYPT_INTERNAL_ECURVE_TYPE_TWISTED_EDWARDS )
+
+#define SYMCRYPT_CURVE_IS_MONTGOMERY_TYPE( _pCurve ) \
+    ( _pCurve->type == SYMCRYPT_INTERNAL_ECURVE_TYPE_MONTGOMERY )
+
 //
 // Scratch space sizes for ECURVE operations
 //
@@ -2008,12 +3029,27 @@ typedef const SYMCRYPT_ECURVE * PCSYMCRYPT_ECURVE;
 #define SYMCRYPT_INTERNAL_SCRATCH_BYTES_FOR_GETSET_VALUE_ECURVE_OPERATIONS( _pCurve )           ( (_pCurve)->cbScratchGetSetValue)
 #define SYMCRYPT_INTERNAL_SCRATCH_BYTES_FOR_ECKEY_ECURVE_OPERATIONS( _pCurve )                  ( (_pCurve)->cbScratchEckey)
 
-typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_ECKEY {
-                    BOOLEAN                 hasPrivateKey;  // Set to true if there is a private key set
-                    PCSYMCRYPT_ECURVE       pCurve;         // Handle to the curve which created the key
+typedef SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_ECPOINT {
+                    BOOLEAN normalized;     // A flag specifying whether the point is normalized or not. This flag
+                                            // makes sense only for PROJECTIVE, JACOBIAN, EXTENDED_PROJECTIVE, and
+                                            // SINGLE_PROJECTIVE coordinates. If set to TRUE (non-zero), it means
+                                            // that the Z coordinate of the point is equal to 1.
+                    PCSYMCRYPT_ECURVE   pCurve; // Handle to the curve which the point is on. Only used in CHKed builds for ASSERTs
+                    SYMCRYPT_MAGIC_FIELD
+                    // An array of MODELEMENTs. The total size will depend on the MODELEMENT size and the number of MODELEMENTs.
+} SYMCRYPT_ECPOINT, *PSYMCRYPT_ECPOINT;
+typedef const SYMCRYPT_ECPOINT * PCSYMCRYPT_ECPOINT;
 
-                    PSYMCRYPT_ECPOINT       poPublicKey;    // Public key (ECPOINT)
-                    PSYMCRYPT_INT           piPrivateKey;   // Private key
+typedef SYMCRYPT_ASYM_ALIGN_STRUCT _SYMCRYPT_ECKEY {
+                    UINT32              fAlgorithmInfo; // Tracks which algorithms the key can be used in
+                                                        // Also tracks which per-key selftests have been performed on this key
+                                                        // A bitwise OR of SYMCRYPT_FLAG_KEY_*, SYMCRYPT_FLAG_ECKEY_*, and
+                                                        // SYMCRYPT_PCT_* values
+                    BOOLEAN             hasPrivateKey;  // Set to true if there is a private key set
+                    PCSYMCRYPT_ECURVE   pCurve;         // Handle to the curve which created the key
+
+                    PSYMCRYPT_ECPOINT   poPublicKey;    // Public key (ECPOINT)
+                    PSYMCRYPT_INT       piPrivateKey;   // Private key
 
                     SYMCRYPT_MAGIC_FIELD
 
@@ -2023,115 +3059,684 @@ typedef SYMCRYPT_ASYM_ALIGN struct _SYMCRYPT_ECKEY {
 typedef       SYMCRYPT_ECKEY * PSYMCRYPT_ECKEY;
 typedef const SYMCRYPT_ECKEY * PCSYMCRYPT_ECKEY;
 
-typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_SET_ZERO_FUNC) ( 
-                    PCSYMCRYPT_ECURVE   pCurve,
-                    PSYMCRYPT_ECPOINT   poDst,
-                    PBYTE               pbScratch,
-                    SIZE_T              cbScratch );
-typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_SET_DISTINGUISHED_FUNC) ( 
-                    PCSYMCRYPT_ECURVE   pCurve,
-                    PSYMCRYPT_ECPOINT   poDst,
-                    PBYTE               pbScratch,
-                    SIZE_T              cbScratch );
-typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_SET_RANDOM_FUNC) ( 
-                    PCSYMCRYPT_ECURVE       pCurve,
-                    PSYMCRYPT_INT           piScalar,
-                    PSYMCRYPT_ECPOINT       poDst,
-                    PBYTE                   pbScratch,
-                    SIZE_T                  cbScratch );
-
-typedef UINT32 (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_ISEQUAL_FUNC) (
-                    PCSYMCRYPT_ECURVE   pCurve,
-                    PCSYMCRYPT_ECPOINT  poSrc1,
-                    PCSYMCRYPT_ECPOINT  poSrc2,
-                    UINT32              flags,
-                    PBYTE               pbScratch,
-                    SIZE_T              cbScratch );
-typedef UINT32 (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_ONCURVE_FUNC) ( 
-                    PCSYMCRYPT_ECURVE   pCurve, 
-                    PCSYMCRYPT_ECPOINT  poSrc,
-                    PBYTE               pbScratch,
-                    SIZE_T              cbScratch );
-typedef UINT32 (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_ISZERO_FUNC) ( 
-                    PCSYMCRYPT_ECURVE   pCurve, 
-                    PCSYMCRYPT_ECPOINT  poSrc,
-                    PBYTE               pbScratch,
-                    SIZE_T              cbScratch );
-                    
-typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_ADD_FUNC) ( 
-                    PCSYMCRYPT_ECURVE   pCurve, 
-                    PCSYMCRYPT_ECPOINT  poSrc1, 
-                    PCSYMCRYPT_ECPOINT  poSrc2, 
-                    PSYMCRYPT_ECPOINT   poDst,
-                    UINT32              flags,
-                    PBYTE               pbScratch,
-                    SIZE_T              cbScratch );
-typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_ADD_DIFF_NONZERO_FUNC) ( 
-                    PCSYMCRYPT_ECURVE   pCurve, 
-                    PCSYMCRYPT_ECPOINT  poSrc1, 
-                    PCSYMCRYPT_ECPOINT  poSrc2, 
-                    PSYMCRYPT_ECPOINT   poDst,
-                    PBYTE               pbScratch,
-                    SIZE_T              cbScratch );
-typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_DOUBLE_FUNC) ( 
-                    PCSYMCRYPT_ECURVE   pCurve, 
-                    PCSYMCRYPT_ECPOINT  poSrc, 
-                    PSYMCRYPT_ECPOINT   poDst,
-                    UINT32              flags,
-                    PBYTE               pbScratch,
-                    SIZE_T              cbScratch );
-typedef VOID (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_NEGATE_FUNC) (
-                    PCSYMCRYPT_ECURVE   pCurve,
-                    PSYMCRYPT_ECPOINT   poSrc,
-                    UINT32              mask,
-                    PBYTE               pbScratch,
-                    SIZE_T              cbScratch );
-typedef SYMCRYPT_ERROR (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_SCALAR_MUL_FUNC) ( 
-                    PCSYMCRYPT_ECURVE       pCurve,
-                    PCSYMCRYPT_INT          piScalar,
-                    PCSYMCRYPT_ECPOINT      poSrc,
-                    UINT32                  flags,
-                    PSYMCRYPT_ECPOINT       poDst,
-                    PBYTE                   pbScratch,
-                    SIZE_T                  cbScratch );
-typedef SYMCRYPT_ERROR (SYMCRYPT_CALL * PSYMCRYPT_ECPOINT_MULTI_SCALAR_MUL_FUNC) ( 
-                    PCSYMCRYPT_ECURVE       pCurve,
-                    PCSYMCRYPT_INT *        piSrcScalarArray,
-                    PCSYMCRYPT_ECPOINT*     peSrcEcpointArray,
-                    UINT32                  nPoints,
-                    UINT32                  flags,
-                    PSYMCRYPT_ECPOINT       poDst,
-                    PBYTE                   pbScratch,
-                    SIZE_T                  cbScratch );
-
-typedef struct _SYMCRYPT_ECURVE_FUNCTIONS
-{
-    PSYMCRYPT_ECPOINT_SET_ZERO_FUNC             setZeroFunc;
-    PSYMCRYPT_ECPOINT_SET_DISTINGUISHED_FUNC    setDistinguishedFunc;
-    PSYMCRYPT_ECPOINT_SET_RANDOM_FUNC           setRandomFunc;
-    PSYMCRYPT_ECPOINT_ISEQUAL_FUNC              isEqualFunc;
-    PSYMCRYPT_ECPOINT_ISZERO_FUNC               isZeroFunc;
-    PSYMCRYPT_ECPOINT_ONCURVE_FUNC              onCurveFunc;
-    PSYMCRYPT_ECPOINT_ADD_FUNC                  addFunc;
-    PSYMCRYPT_ECPOINT_ADD_DIFF_NONZERO_FUNC     addDiffFunc;
-    PSYMCRYPT_ECPOINT_DOUBLE_FUNC               doubleFunc;
-    PSYMCRYPT_ECPOINT_NEGATE_FUNC               negateFunc;
-    PSYMCRYPT_ECPOINT_SCALAR_MUL_FUNC           scalarMulFunc;
-    PSYMCRYPT_ECPOINT_MULTI_SCALAR_MUL_FUNC     multiScalarMulFunc;
-} SYMCRYPT_ECURVE_FUNCTIONS, *PSYMCRYPT_ECURVE_FUNCTIONS;
-typedef const SYMCRYPT_ECURVE_FUNCTIONS  *PCSYMCRYPT_ECURVE_FUNCTIONS;
-
-SYMCRYPT_ALIGN struct _SYMCRYPT_802_11_SAE_CUSTOM_STATE {
-    PSYMCRYPT_ECURVE        pCurve;             
+SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_802_11_SAE_CUSTOM_STATE {
+    PSYMCRYPT_ECURVE        pCurve;
+    PCSYMCRYPT_MAC          macAlgorithm;
     PSYMCRYPT_MODELEMENT    peRand;
     PSYMCRYPT_MODELEMENT    peMask;
     PSYMCRYPT_ECPOINT       poPWE;
     BYTE                    counter;
 };
 
+//
+// XMSS
+//
+
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_XMSS_PARAMS
+{
+    PCSYMCRYPT_HASH hash;           // hash function
+    UINT32          id;             // algorithm identifier
+    UINT32          cbHashOutput;   // hash function output size, must be less than or equal to hash->resultSize
+    UINT32          nWinternitzWidth;// Winternitz coefficient, width of digits in bits (chain length = 2^nWinternitzWidth)
+    UINT32          nTotalTreeHeight;// number of layers times the tree height of one layer (each layer has the same height)
+    UINT32          nLayers;        // hyper-tree layers, 1 for single tree
+    UINT32          cbPrefix;       // length of the domain separator prefix in PRFs
+
+    //
+    // The following are derived from the above
+    //
+    UINT32          len1;           // number of w-bit digits in the hash output to be signed ( len1 = ceil(8n / w) )
+    UINT32          len2;           // number of w-bit digits in the checksum
+    UINT32          len;            // len1 + len2
+    UINT32          nLayerHeight;   // tree height of a single layer (h / d)
+    UINT32          cbIdx;          // size of leaf counter in bytes (for single trees cbIdx = 4)
+    UINT32          nLeftShift32;   // left shift count to align the checksum digits to MSB of a 32-bit word
+
+    BYTE            Reserved[16];   // Reserved for future use
+} SYMCRYPT_XMSS_PARAMS;
+
+typedef SYMCRYPT_XMSS_PARAMS* PSYMCRYPT_XMSS_PARAMS;
+typedef const SYMCRYPT_XMSS_PARAMS* PCSYMCRYPT_XMSS_PARAMS;
+
+struct _SYMCRYPT_XMSS_KEY;
+typedef struct _SYMCRYPT_XMSS_KEY SYMCRYPT_XMSS_KEY;
+typedef       SYMCRYPT_XMSS_KEY* PSYMCRYPT_XMSS_KEY;
+typedef const SYMCRYPT_XMSS_KEY* PCSYMCRYPT_XMSS_KEY;
+
+
+//==========================================================================
+//   LMS internal structures
+//==========================================================================
+
+typedef SYMCRYPT_ALIGN_STRUCT _SYMCRYPT_LMS_PARAMS
+{
+    // algorithm ID of the LMS signature scheme
+    UINT32                  lmsAlgID;
+
+    // algorithm ID of the LM-OTS signature scheme
+    UINT32                  lmsOtsAlgID;
+
+    // hash function pointer to be used as part of the LMS operations
+    PCSYMCRYPT_HASH         pLmsHashFunction;
+
+    // the height of the LMS tree. There are 2^h leaves in the tree - h
+    UINT32                  nTreeHeight;
+
+    // the number of bytes for each tree node, equals to the output length of the hash function - m, n
+    UINT32                  cbHashOutput;
+
+    // Winternitz coefficient, width of digits in bits (chain length = 2^w) - w
+    UINT32                  nWinternitzChainWidth;
+
+    // the number of n-byte string elements that make up the LM-OTS signature - p
+    UINT32                  nByteStringCount;
+
+    // the number of left-shift bits used in the checksum function Cksm - ls
+    UINT32                  nChecksumLShiftBits;
+} SYMCRYPT_LMS_PARAMS;
+typedef       SYMCRYPT_LMS_PARAMS* PSYMCRYPT_LMS_PARAMS;
+typedef const SYMCRYPT_LMS_PARAMS* PCSYMCRYPT_LMS_PARAMS;
+
+struct _SYMCRYPT_LMS_KEY;
+typedef struct _SYMCRYPT_LMS_KEY SYMCRYPT_LMS_KEY;
+typedef        SYMCRYPT_LMS_KEY* PSYMCRYPT_LMS_KEY;
+typedef const  SYMCRYPT_LMS_KEY* PCSYMCRYPT_LMS_KEY;
 
 #ifndef _PREFAST_
 #if SYMCRYPT_CPU_X86
 #pragma warning(pop)
 #endif
 #endif
+
+
+
+//////////////////////////////////////////////////////////
+//
+// Environment macros
+//
+
+#ifdef __cplusplus
+#define SYMCRYPT_EXTERN_C extern "C" {
+#define SYMCRYPT_EXTERN_C_END }
+#else
+#define SYMCRYPT_EXTERN_C
+#define SYMCRYPT_EXTERN_C_END
+#endif
+
+//
+// Callers of SymCrypt should NOT depend on the function names in these macros.
+// The definition of these macros can change in future releases of the library.
+//
+
+#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64
+typedef struct _SYMCRYPT_EXTENDED_SAVE_DATA      SYMCRYPT_EXTENDED_SAVE_DATA, *PSYMCRYPT_EXTENDED_SAVE_DATA;
+
+#define SYMCRYPT_ENVIRONMENT_DEFS_SAVEYMM( envName ) \
+    SYMCRYPT_ERROR SYMCRYPT_CALL SymCryptSaveYmmEnv##envName( _Out_ PSYMCRYPT_EXTENDED_SAVE_DATA pSaveArea ); \
+    SYMCRYPT_ERROR SYMCRYPT_CALL SymCryptSaveYmm( _Out_ PSYMCRYPT_EXTENDED_SAVE_DATA pSaveArea ) \
+        { return SymCryptSaveYmmEnv##envName( pSaveArea ); } \
+    \
+    VOID SYMCRYPT_CALL SymCryptRestoreYmmEnv##envName( _Inout_ PSYMCRYPT_EXTENDED_SAVE_DATA pSaveArea ); \
+    VOID SYMCRYPT_CALL SymCryptRestoreYmm( _Inout_ PSYMCRYPT_EXTENDED_SAVE_DATA pSaveArea ) \
+        { SymCryptRestoreYmmEnv##envName( pSaveArea ); } \
+
+#define SYMCRYPT_ENVIRONMENT_DEFS_SAVEXMM( envName ) \
+    SYMCRYPT_ERROR SYMCRYPT_CALL SymCryptSaveXmmEnv##envName( _Out_ PSYMCRYPT_EXTENDED_SAVE_DATA pSaveArea ); \
+    SYMCRYPT_ERROR SYMCRYPT_CALL SymCryptSaveXmm( _Out_ PSYMCRYPT_EXTENDED_SAVE_DATA pSaveArea ) \
+        { return SymCryptSaveXmmEnv##envName( pSaveArea ); } \
+    \
+    VOID SYMCRYPT_CALL SymCryptRestoreXmmEnv##envName( _Inout_ PSYMCRYPT_EXTENDED_SAVE_DATA pSaveArea ); \
+    VOID SYMCRYPT_CALL SymCryptRestoreXmm( _Inout_ PSYMCRYPT_EXTENDED_SAVE_DATA pSaveArea ) \
+        { SymCryptRestoreXmmEnv##envName( pSaveArea ); } \
+
+
+#else
+
+#define SYMCRYPT_ENVIRONMENT_DEFS_SAVEYMM( envName )
+#define SYMCRYPT_ENVIRONMENT_DEFS_SAVEXMM( envName )
+
+#endif
+
+// Environment forwarding functions.
+// CPUIDEX is only forwarded on CPUs that have it.
+#if SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_X86
+#define SYMCRYPT_ENVIRONMENT_FORWARD_CPUIDEX( envName ) \
+    VOID SYMCRYPT_CALL SymCryptCpuidExFuncEnv##envName( int cpuInfo[4], int function_id, int subfunction_id ); \
+    VOID SYMCRYPT_CALL SymCryptCpuidExFunc( int cpuInfo[4], int function_id, int subfunction_id ) \
+        { SymCryptCpuidExFuncEnv##envName( cpuInfo, function_id, subfunction_id ); }
+#else
+#define SYMCRYPT_ENVIRONMENT_FORWARD_CPUIDEX( envName )
+#endif
+
+#define SYMCRYPT_ENVIRONMENT_DEFS( envName ) \
+SYMCRYPT_EXTERN_C \
+    VOID SYMCRYPT_CALL SymCryptInitEnv##envName( UINT32 version ); \
+    VOID SYMCRYPT_CALL SymCryptInit(void) \
+        { SymCryptInitEnv##envName( SYMCRYPT_API_VERSION ); } \
+    \
+    _Analysis_noreturn_ VOID SYMCRYPT_CALL SymCryptFatalEnv##envName( UINT32 fatalCode ); \
+    _Analysis_noreturn_ VOID SYMCRYPT_CALL SymCryptFatal( UINT32 fatalCode ) \
+        { SymCryptFatalEnv##envName( fatalCode ); } \
+    SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresentEnv##envName(void); \
+    SYMCRYPT_CPU_FEATURES SYMCRYPT_CALL SymCryptCpuFeaturesNeverPresent(void) \
+        { return SymCryptCpuFeaturesNeverPresentEnv##envName(); } \
+    \
+    SYMCRYPT_ENVIRONMENT_DEFS_SAVEXMM( envName ) \
+    SYMCRYPT_ENVIRONMENT_DEFS_SAVEYMM( envName ) \
+    \
+    VOID SYMCRYPT_CALL SymCryptTestInjectErrorEnv##envName( PBYTE pbBuf, SIZE_T cbBuf ); \
+    VOID SYMCRYPT_CALL SymCryptInjectError( PBYTE pbBuf, SIZE_T cbBuf ) \
+        { SymCryptTestInjectErrorEnv##envName( pbBuf, cbBuf ); } \
+    SYMCRYPT_ENVIRONMENT_FORWARD_CPUIDEX( envName ) \
+SYMCRYPT_EXTERN_C_END
+
+//
+// To avoid hard-do-diagnose mistakes, we skip defining environment macros in those cases where we
+// know they cannot or should not be used.
+//
+
+#define SYMCRYPT_ENVIRONMENT_GENERIC                            SYMCRYPT_ENVIRONMENT_DEFS( Generic )
+
+#if defined(EFI) | defined(PCAT) | defined(DIRECT)
+#define SYMCRYPT_ENVIRONMENT_WINDOWS_BOOTLIBRARY                SYMCRYPT_ENVIRONMENT_DEFS( WindowsBootlibrary )
+#endif
+
+//
+// There are no defined symbols that we can use to detect that we are in debugger code
+// But this is unlikely to be misused.
+//
+#define SYMCRYPT_ENVIRONMENT_WINDOWS_KERNELDEBUGGER             SYMCRYPT_ENVIRONMENT_DEFS( WindowsKernelDebugger )
+
+
+
+#define SYMCRYPT_ENVIRONMENT_WINDOWS_KERNELMODE_LEGACY          SYMCRYPT_ENVIRONMENT_GENERIC
+
+#ifdef NTDDI_VERSION
+#if (NTDDI_VERSION >= NTDDI_WIN7)
+#define SYMCRYPT_ENVIRONMENT_WINDOWS_KERNELMODE_WIN7_N_LATER    SYMCRYPT_ENVIRONMENT_DEFS( WindowsKernelmodeWin7nLater )
+#endif
+
+#if (NTDDI_VERSION >= NTDDI_WINBLUE)
+#define SYMCRYPT_ENVIRONMENT_WINDOWS_KERNELMODE_WIN8_1_N_LATER  SYMCRYPT_ENVIRONMENT_DEFS( WindowsKernelmodeWin8_1nLater )
+#endif
+
+#define SYMCRYPT_ENVIRONMENT_WINDOWS_KERNELMODE_LATEST          SYMCRYPT_ENVIRONMENT_WINDOWS_KERNELMODE_WIN8_1_N_LATER
+
+
+
+#define SYMCRYPT_ENVIRONMENT_WINDOWS_USERMODE_LEGACY            SYMCRYPT_ENVIRONMENT_GENERIC
+
+#if (NTDDI_VERSION >= NTDDI_WIN7)
+#define SYMCRYPT_ENVIRONMENT_WINDOWS_USERMODE_WIN7_N_LATER      SYMCRYPT_ENVIRONMENT_DEFS( WindowsUsermodeWin7nLater )
+#endif
+
+#if (NTDDI_VERSION >= NTDDI_WINBLUE)
+#define SYMCRYPT_ENVIRONMENT_WINDOWS_USERMODE_WIN8_1_N_LATER    SYMCRYPT_ENVIRONMENT_DEFS( WindowsUsermodeWin8_1nLater )
+#endif
+
+#if (NTDDI_VERSION >= NTDDI_WIN10)
+#define SYMCRYPT_ENVIRONMENT_WINDOWS_USERMODE_WIN10_SGX         SYMCRYPT_ENVIRONMENT_DEFS( Win10Sgx )
+#endif
+#endif // NTDDI_VERSION
+
+#define SYMCRYPT_ENVIRONMENT_WINDOWS_USERMODE_LATEST            SYMCRYPT_ENVIRONMENT_WINDOWS_USERMODE_WIN8_1_N_LATER
+
+
+#define SYMCRYPT_ENVIRONMENT_POSIX_USERMODE                     SYMCRYPT_ENVIRONMENT_DEFS( PosixUsermode )
+
+// For backwards compatibility with previous macro name
+#define SYMCRYPT_ENVIRONMENT_LINUX_USERMODE                     SYMCRYPT_ENVIRONMENT_POSIX_USERMODE
+
+
+#define SYMCRYPT_ENVIRONMENT_OPTEE_TA                           SYMCRYPT_ENVIRONMENT_DEFS( OpteeTa )
+
+//////////////////////////////////////////////////////////
+//
+// SymCryptWipe & SymCryptWipeKnownSize
+//
+
+VOID
+SYMCRYPT_CALL
+SymCryptWipe(
+    _Out_writes_bytes_(cbData)    PVOID   pbData,
+    SIZE_T  cbData);
+
+#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_ARM | SYMCRYPT_CPU_ARM64
+
+//
+// If the known size is large we call the generic wipe function anyway.
+// For small known sizes we perform the wipe inline.
+// This is a tradeoff between speed and code size and there are diminishing returns to supporting
+// increasingly large sizes.
+// We currently put the limit at ~8 native writes, which varies by platform.
+//
+#if SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_ARM
+#define SYMCRYPT_WIPE_FUNCTION_LIMIT (32)   // If this is increased beyond 127 the code below must be updated.
+#elif SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_ARM64
+#define SYMCRYPT_WIPE_FUNCTION_LIMIT (64)   // If this is increased beyond 127 the code below must be updated.
+#else
+#error ??
+#endif
+
+//
+// The buffer analysis code doesn't understand our optimized in-line wiping code
+// well enough to conclude it is safe.
+//
+#pragma prefast(push)
+#pragma prefast( disable: 26001 )
+
+FORCEINLINE
+VOID
+SYMCRYPT_CALL
+#pragma prefast( suppress: 6101, "Logic why this properly initializes the pbData buffer is too complicated for prefast" )
+SymCryptWipeKnownSize(_Out_writes_bytes_(cbData) PVOID pbData, SIZE_T cbData)
+{
+    volatile BYTE * pb = (volatile BYTE *)pbData;
+
+    if (cbData > SYMCRYPT_WIPE_FUNCTION_LIMIT)
+    {
+        SymCryptWipe(pbData, cbData);
+    }
+    else
+    {
+        //
+        // We assume that pb is aligned, so we wipe from the end to the front to keep alignment.
+        //
+        if (cbData & 1)
+        {
+            cbData--;
+            SYMCRYPT_INTERNAL_FORCE_WRITE8((volatile BYTE *)&pb[cbData], 0);
+        }
+        if (cbData & 2)
+        {
+            cbData -= 2;
+            SYMCRYPT_INTERNAL_FORCE_WRITE16((volatile UINT16 *)&pb[cbData], 0);
+        }
+        if (cbData & 4)
+        {
+            cbData -= 4;
+            SYMCRYPT_INTERNAL_FORCE_WRITE32((volatile UINT32 *)&pb[cbData], 0);
+        }
+        if (cbData & 8)
+        {
+            cbData -= 8;
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData], 0);
+        }
+        if (cbData & 16)
+        {
+            cbData -= 16;
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData], 0);
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData + 8], 0);
+        }
+        if (cbData & 32)
+        {
+            cbData -= 32;
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData], 0);
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData + 8], 0);
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData + 16], 0);
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData + 24], 0);
+        }
+#if SYMCRYPT_WIPE_FUNCTION_LIMIT >= 64
+        if (cbData & 64)
+        {
+            cbData -= 64;
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData], 0);
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData + 8], 0);
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData + 16], 0);
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData + 24], 0);
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData + 32], 0);
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData + 40], 0);
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData + 48], 0);
+            SYMCRYPT_INTERNAL_FORCE_WRITE64((volatile UINT64 *)&pb[cbData + 56], 0);
+        }
+#endif
+    }
+}
+
+#pragma prefast(pop)
+
+#else // Platform switch for SymCryptWipeKnownSize
+
+FORCEINLINE
+VOID
+SYMCRYPT_CALL
+SymCryptWipeKnownSize(_Out_writes_bytes_(cbData) PVOID pbData, SIZE_T cbData)
+{
+    SymCryptWipe(pbData, cbData);
+}
+
+#endif  // Platform switch for SymCryptWipeKnownSize
+
+#define SYMCRYPT_FIPS_ASSERT(x) { if(!(x)){ SymCryptFatal('FIPS'); } }
+
+// Flags for FIPS on-demand selftests. When an on-demand selftest succeeds, the corresponding flag
+// will be set in g_SymCryptFipsSelftestsPerformed. Other selftests are performed automatically
+// when the module is loaded, so they don't have a corresponding flag.
+typedef enum _SYMCRYPT_SELFTEST_ALGORITHM {
+    SYMCRYPT_SELFTEST_ALGORITHM_NONE    =   0x0,
+    SYMCRYPT_SELFTEST_ALGORITHM_STARTUP =   0x1,
+    SYMCRYPT_SELFTEST_ALGORITHM_DSA     =   0x2,
+    SYMCRYPT_SELFTEST_ALGORITHM_ECDSA   =   0x4,
+    SYMCRYPT_SELFTEST_ALGORITHM_RSA     =   0x8,
+    SYMCRYPT_SELFTEST_ALGORITHM_DH      =  0x10,
+    SYMCRYPT_SELFTEST_ALGORITHM_ECDH    =  0x20,
+    SYMCRYPT_SELFTEST_ALGORITHM_MLKEM   =  0x40,
+    SYMCRYPT_SELFTEST_ALGORITHM_XMSS    =  0x80,
+    SYMCRYPT_SELFTEST_ALGORITHM_LMS     = 0x100,
+    SYMCRYPT_SELFTEST_ALGORITHM_MLDSA   = 0x200,
+} SYMCRYPT_SELFTEST_ALGORITHM;
+
+// Takes values which are some bitwise OR combination of SYMCRYPT_SELFTEST_ALGORITHM values
+// Specified as UINT32 as we will update with 32 bit atomics, and compilers may choose to make enum
+// types smaller than 32 bits.
+extern UINT32 g_SymCryptFipsSelftestsPerformed;
+
+UINT32
+SYMCRYPT_CALL
+SymCryptFipsGetSelftestsPerformed(void);
+// Returns current value of g_SymCryptFipsSelftestsPerformed so callers may inspect which FIPS
+// algorithm selftests have run
+
+// Flags for per-key selftests.
+// When an asymmetric key is generated or imported, and SYMCRYPT_FLAG_KEY_NO_FIPS is not specified,
+// some selftests must be performed on the key, before its operational use in an algorithm, to
+// comply with FIPS.
+// The algorithms the key may be used in will be tracked in the key's fAlgorithmInfo field, as a
+// bitwise OR of SYMCRYPT_FLAG_<keytype>_<algorithm> (e.g. SYMCRYPT_FLAG_DLKEY_DH).
+// This field will also track which per-key selftests have been run on the key using the below flags
+// We want to track which selftests have been run independently of which algorithms the key may be
+// used in as in some scenarios at key generation / import time we may not know what algorithm the
+// key will actually be used in. Tracking the run per-key selftests in fAlgorithmInfo allows us to
+// defer running expensive tests until we know they are required (e.g. if we generate an Eckey which
+// may be used in ECDH or ECDSA, and only use it for ECDH, the ECDSA PCT is deferred until we first
+// attempt to use the key in ECDSA, or export the private key).
+//
+// For clarity, SYMCRYPT_PCT_* should be used instead of SYMCRYPT_SELFTEST_KEY_* going forward.
+// The latter is retained for compatibility with existing code, but may be removed in a future
+// breaking change.
+
+// Dlkey selftest flags
+// DSA Pairwise Consistency Test to be run on generated keys
+#define SYMCRYPT_SELFTEST_KEY_DSA       (0x1)
+#define SYMCRYPT_PCT_DSA                SYMCRYPT_SELFTEST_KEY_DSA
+
+// Eckey selftest flags
+// ECDSA Pairwise Consistency Test to be run on generated keys
+#define SYMCRYPT_SELFTEST_KEY_ECDSA     (0x1)
+#define SYMCRYPT_PCT_ECDSA              SYMCRYPT_SELFTEST_KEY_ECDSA
+
+// Rsakey selftest flags
+// RSA Pairwise Consistency Test to be run on generated keys
+#define SYMCRYPT_SELFTEST_KEY_RSA_SIGN  (0x1)
+#define SYMCRYPT_PCT_RSA_SIGN           SYMCRYPT_SELFTEST_KEY_RSA_SIGN
+
+UINT32
+SYMCRYPT_CALL
+SymCryptDeprecatedStatusIndicator(PBYTE pbOutput, UINT32 cbOutput);
+//
+// Returns the FIPS Approved Services Status Indicator as an ASCII string.
+// This API is required to satisfy FIPS 140-3 requirements, but is *not* recommended
+// to be used in production code. It should be considered unstable,
+// and may be removed at any time.
+//
+// The output string will be copied to pbOutput if the size of the buffer
+// cbOutput is large enough. The function returns the required buffer size
+// when pbOutput is passed as NULL. If pbOutput is not NULL, the function
+// returns the number of bytes copied to pbOutput.
+//
+
+
+
+typedef enum _SYMCRYPT_SI_TYPE {
+    
+    // Algorithm types (specific algorithms are represented as a bitmask of a type)
+    SYMCRYPT_SI_TYPE_CIPHER             = 0x01,
+    SYMCRYPT_SI_TYPE_HASH               = 0x02,
+    SYMCRYPT_SI_TYPE_MAC                = 0x03,
+    SYMCRYPT_SI_TYPE_KDF                = 0x04,
+    SYMCRYPT_SI_TYPE_DRBG               = 0x05,
+    SYMCRYPT_SI_TYPE_ASYM_ALG           = 0x06,
+    SYMCRYPT_SI_TYPE_KAS                = 0x07,
+
+    // Other types where elements are a bitmask
+    SYMCRYPT_SI_TYPE_ECURVE             = 0x40,
+    SYMCRYPT_SI_TYPE_KAS_SCHEME         = 0x41,
+    SYMCRYPT_SI_TYPE_SAFE_PRIME_GROUP   = 0x42,
+
+    // Non-bitmask types
+    SYMCRYPT_SI_TYPE_INTRANGE           = 0x80,
+    SYMCRYPT_SI_TYPE_INTPAIR            = 0x81,
+
+    SYMCRYPT_SI_TYPE_MAX                = 0xFF
+} SYMCRYPT_SI_TYPE;
+
+#define SYMCRYPT_SI_CREATE_ID(type, index)  (((UINT64)(type) << 56) + (1ULL << (index)))
+
+#define SYMCRYPT_SI_INTBITS                 ((64 - 8) / 2)  // 8-bits for type, remaining bits shared by two integers
+#define SYMCRYPT_SI_INTMASK                 ((1ULL << SYMCRYPT_SI_INTBITS) - 1) // typically should be 0x0FFFFFFF with 28 1s
+#define SYMCRYPT_SI_INTPACK(High, Low)      (((((UINT64)High) & SYMCRYPT_SI_INTMASK) << SYMCRYPT_SI_INTBITS) | (((UINT64)Low) & SYMCRYPT_SI_INTMASK))
+#define SYMCRYPT_SI_INTUNPACKLO(X)          ((X) & SYMCRYPT_SI_INTMASK)
+#define SYMCRYPT_SI_INTUNPACKHI(X)          (((X) >> SYMCRYPT_SI_INTBITS) & SYMCRYPT_SI_INTMASK)
+
+#define SYMCRYPT_SI_INTRANGE(Low, High)     (((UINT64)SYMCRYPT_SI_TYPE_INTRANGE << 56) | SYMCRYPT_SI_INTPACK(High, Low))
+#define SYMCRYPT_SI_INTPAIR(X, Y)           (((UINT64)SYMCRYPT_SI_TYPE_INTPAIR << 56) | SYMCRYPT_SI_INTPACK(Y, X))
+
+#define SYMCRYPT_SI_CHECK_INT(L)            C_ASSERT(L <= SYMCRYPT_SI_INTMASK)
+
+#define SYMCRYPT_SI_KEYBITS(L)              SYMCRYPT_SI_INTRANGE(L, L)
+#define SYMCRYPT_SI_MODULUS(L)              SYMCRYPT_SI_INTRANGE(L, L)
+#define SYMCRYPT_SI_DSAPARAMS(N, L)         SYMCRYPT_SI_INTPAIR(N, L)
+
+
+// Services
+#define SYMCRYPT_SI_SVC_ENCRYPTION                      0x00000001
+#define SYMCRYPT_SI_SVC_DECRYPTION                      0x00000002
+#define SYMCRYPT_SI_SVC_HASHING                         0x00000004
+#define SYMCRYPT_SI_SVC_MESSAGE_AUTHENTICATION          0x00000008
+#define SYMCRYPT_SI_SVC_KEY_DERIVATION                  0x00000010
+#define SYMCRYPT_SI_SVC_ASYMMETRIC_KEY_GENERATION       0x00000020
+#define SYMCRYPT_SI_SVC_ASYMMETRIC_KEY_VERIFICATION     0x00000080
+#define SYMCRYPT_SI_SVC_RANDOM_NUMBER_GENERATION        0x00000400
+#define SYMCRYPT_SI_SVC_SECRET_AGREEMENT                0x00000800
+#define SYMCRYPT_SI_SVC_SIGNATURE_GENERATION            0x00001000
+#define SYMCRYPT_SI_SVC_SIGNATURE_VERIFICATION          0x00002000
+
+// Ciphers
+#define SYMCRYPT_SI_AES_CBC                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 0)
+#define SYMCRYPT_SI_AES_CCM                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 1)
+#define SYMCRYPT_SI_AES_CFB128              SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 2)
+#define SYMCRYPT_SI_AES_CFB8                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 3)
+#define SYMCRYPT_SI_AES_CTR                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 4)
+#define SYMCRYPT_SI_AES_ECB                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 5)
+#define SYMCRYPT_SI_AES_GCM                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 6)
+#define SYMCRYPT_SI_AES_XTS                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 7)
+#define SYMCRYPT_SI_RC2                     SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 8)
+#define SYMCRYPT_SI_RC4                     SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 9)
+#define SYMCRYPT_SI_CHACHA                  SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 10)
+#define SYMCRYPT_SI_DES                     SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 11)
+#define SYMCRYPT_SI_TRIPLEDES               SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 12)
+#define SYMCRYPT_SI_CHACHA20                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 13)
+#define SYMCRYPT_SI_CHACHA20_POLY1305       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 14)
+#define SYMCRYPT_SI_AES_KW                  SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 15)
+#define SYMCRYPT_SI_AES_KWP                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_CIPHER, 16)
+
+// Hash Functions
+#define SYMCRYPT_SI_MD2                     SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 0)
+#define SYMCRYPT_SI_MD4                     SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 1)
+#define SYMCRYPT_SI_MD5                     SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 2)
+#define SYMCRYPT_SI_SHA1                    SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 3)
+#define SYMCRYPT_SI_SHA2_224                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 4)
+#define SYMCRYPT_SI_SHA2_256                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 5)
+#define SYMCRYPT_SI_SHA2_384                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 6)
+#define SYMCRYPT_SI_SHA2_512                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 7)
+#define SYMCRYPT_SI_SHA2_512_224            SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 8)
+#define SYMCRYPT_SI_SHA2_512_256            SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 9)
+#define SYMCRYPT_SI_SHA3_224                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 10)
+#define SYMCRYPT_SI_SHA3_256                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 11)
+#define SYMCRYPT_SI_SHA3_384                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 12)
+#define SYMCRYPT_SI_SHA3_512                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 13)
+#define SYMCRYPT_SI_SHAKE128                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 14)
+#define SYMCRYPT_SI_SHAKE256                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 15)
+#define SYMCRYPT_SI_CSHAKE128               SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 16)
+#define SYMCRYPT_SI_CSHAKE256               SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 17)
+#define SYMCRYPT_SI_MARVIN32                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_HASH, 18)
+
+// MAC
+#define SYMCRYPT_SI_HMAC_MD2                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 0)
+#define SYMCRYPT_SI_HMAC_MD4                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 1)
+#define SYMCRYPT_SI_HMAC_MD5                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 2)
+#define SYMCRYPT_SI_HMAC_SHA1               SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 3)
+#define SYMCRYPT_SI_HMAC_SHA2_224           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 4)
+#define SYMCRYPT_SI_HMAC_SHA2_256           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 5)
+#define SYMCRYPT_SI_HMAC_SHA2_384           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 6)
+#define SYMCRYPT_SI_HMAC_SHA2_512           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 7)
+#define SYMCRYPT_SI_HMAC_SHA2_512_224       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 8)
+#define SYMCRYPT_SI_HMAC_SHA2_512_256       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 9)
+#define SYMCRYPT_SI_HMAC_SHA3_224           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 10)
+#define SYMCRYPT_SI_HMAC_SHA3_256           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 11)
+#define SYMCRYPT_SI_HMAC_SHA3_384           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 12)
+#define SYMCRYPT_SI_HMAC_SHA3_512           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 13)
+#define SYMCRYPT_SI_KMAC128                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 14)
+#define SYMCRYPT_SI_KMAC256                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 15)
+#define SYMCRYPT_SI_AES_GMAC                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 16)
+#define SYMCRYPT_SI_AES_CMAC                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 17)
+#define SYMCRYPT_SI_AES_CBCMAC              SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 18)
+#define SYMCRYPT_SI_POLY1305                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_MAC, 19)
+
+// KDF
+#define SYMCRYPT_SI_HKDF                    SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KDF, 0)
+#define SYMCRYPT_SI_PBKDF                   SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KDF, 1)
+#define SYMCRYPT_SI_KDA_ONESTEP             SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KDF, 2)
+#define SYMCRYPT_SI_KDF_IKEV1               SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KDF, 3)
+#define SYMCRYPT_SI_KDF_IKEV2               SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KDF, 4)
+#define SYMCRYPT_SI_KDF_SP800_108_CTR       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KDF, 5)
+#define SYMCRYPT_SI_KDF_SRTP                SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KDF, 6)
+#define SYMCRYPT_SI_KDF_SSH                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KDF, 7)
+#define SYMCRYPT_SI_KDF_TLS                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KDF, 8)
+#define SYMCRYPT_SI_KDF_TLS_V12             SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KDF, 9)
+
+// DRBG
+#define SYMCRYPT_SI_CTR_DRBG_AES256         SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_DRBG, 0)
+
+// Asymmetric Algorithms
+#define SYMCRYPT_SI_SAFE_PRIME_KEYGEN       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 0)
+#define SYMCRYPT_SI_DSA_KEYGEN              SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 1)
+#define SYMCRYPT_SI_DSA_PQGGEN              SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 2)
+#define SYMCRYPT_SI_DSA_PQGVER              SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 3)
+#define SYMCRYPT_SI_DSA_SIGVER              SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 4)
+
+#define SYMCRYPT_SI_ECDSA_KEYGEN            SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 5)
+#define SYMCRYPT_SI_ECDSA_KEYVER            SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 6)
+#define SYMCRYPT_SI_ECDSA_SIGGEN            SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 7)
+#define SYMCRYPT_SI_ECDSA_SIGVER            SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 8)
+#define SYMCRYPT_SI_ECDSA_SIGGEN_COMP       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 9)
+
+#define SYMCRYPT_SI_RSA_KEYGEN              SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 10)
+#define SYMCRYPT_SI_RSA_DEC_PRIM            SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 12)
+#define SYMCRYPT_SI_RSA_SIG_PRIM            SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 13)
+#define SYMCRYPT_SI_RSA_SIGGEN_PKCS15       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 14)
+#define SYMCRYPT_SI_RSA_SIGGEN_PKCSPSS      SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 15)
+#define SYMCRYPT_SI_RSA_SIGVER_PKCS15       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 16)
+#define SYMCRYPT_SI_RSA_SIGVER_PKCSPSS      SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 17)
+
+#define SYMCRYPT_SI_KAS_ECC                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 18)
+#define SYMCRYPT_SI_KAS_ECC_SSC             SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 19)
+#define SYMCRYPT_SI_KAS_FFC                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 20)
+#define SYMCRYPT_SI_KAS_FFC_SSC             SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 21)
+
+// PQ Algorithms
+#define SYMCRYPT_SI_MLKEM                   SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 22)
+#define SYMCRYPT_SI_MLDSA                   SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 23)
+#define SYMCRYPT_SI_XMSS                    SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 24)
+#define SYMCRYPT_SI_XMSS_MT                 SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 25)
+#define SYMCRYPT_SI_LMS                     SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ASYM_ALG, 26)
+
+
+// Elliptic Curves
+#define SYMCRYPT_SI_ECURVE_NISTP192         SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ECURVE, 0)
+#define SYMCRYPT_SI_ECURVE_NISTP224         SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ECURVE, 1)
+#define SYMCRYPT_SI_ECURVE_NISTP256         SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ECURVE, 2)
+#define SYMCRYPT_SI_ECURVE_NISTP384         SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ECURVE, 3)
+#define SYMCRYPT_SI_ECURVE_NISTP521         SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ECURVE, 4)
+#define SYMCRYPT_SI_ECURVE_NUMSP256T1       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ECURVE, 5)
+#define SYMCRYPT_SI_ECURVE_NUMSP384T1       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ECURVE, 6)
+#define SYMCRYPT_SI_ECURVE_NUMSP512T1       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ECURVE, 7)
+#define SYMCRYPT_SI_ECURVE_CURVE25519       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_ECURVE, 8)
+
+// Safe Prime Groups
+#define SYMCRYPT_SI_SPG_FFDHE_2048          SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_SAFE_PRIME_GROUP, 0)
+#define SYMCRYPT_SI_SPG_FFDHE_3072          SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_SAFE_PRIME_GROUP, 1)
+#define SYMCRYPT_SI_SPG_FFDHE_4096          SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_SAFE_PRIME_GROUP, 2)
+#define SYMCRYPT_SI_SPG_FFDHE_6144          SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_SAFE_PRIME_GROUP, 3)
+#define SYMCRYPT_SI_SPG_FFDHE_8192          SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_SAFE_PRIME_GROUP, 4)
+#define SYMCRYPT_SI_SPG_MODP_2048           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_SAFE_PRIME_GROUP, 5)
+#define SYMCRYPT_SI_SPG_MODP_3072           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_SAFE_PRIME_GROUP, 6)
+#define SYMCRYPT_SI_SPG_MODP_4096           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_SAFE_PRIME_GROUP, 7)
+#define SYMCRYPT_SI_SPG_MODP_6144           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_SAFE_PRIME_GROUP, 8)
+#define SYMCRYPT_SI_SPG_MODP_8192           SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_SAFE_PRIME_GROUP, 9)
+
+// KAS Schemes
+#define SYMCRYPT_SI_SCHEME_EPHEM_UNIFIED    SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KAS_SCHEME, 0)
+#define SYMCRYPT_SI_SCHEME_DH_EPHEM         SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KAS_SCHEME, 1)
+#define SYMCRYPT_SI_SCHEME_DH_ONEFLOW       SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KAS_SCHEME, 2)
+#define SYMCRYPT_SI_SCHEME_DH_STATIC        SYMCRYPT_SI_CREATE_ID(SYMCRYPT_SI_TYPE_KAS_SCHEME, 3)
+
+
+UINT32
+SYMCRYPT_CALL
+SymCryptDeprecatedServiceIndicator(
+    UINT32 Service,
+    UINT64 Alg,
+    UINT64 Param1,
+    UINT64 Param2,
+    UINT64 Param3);
+//
+// Returns FIPS 140 Approved Services Indicator for an algorithm.
+//
+// Parameters:
+//  - Service. Service identifier, one of SYMCRYPT_SI_SVC_XXX.
+//  - Alg. Identifier of the algorithm for which the status is being queried. This must be
+//  exactly one of the algorithm identifiers defined above.
+//  - Param1, Param2, Param3. Depending on the Alg parameter, these parameters provide
+//  additional information about the capabilities and parameters associated with an
+//  algorithm. For each algorithm, the number and type of the parameters must be provided
+//  as specified below. Any unused parameters must be passed as 0. The algorithms that require
+//  parameters to be specified are listed below, the remaining algorithms do not have any parameters.
+// 
+//      Alg Id                          Param1                              Param2
+//      -----------------------------   --------------------------------    ---------------
+//      SYMCRYPT_SI_AES_XTS             SYMCRYPT_SI_KEYBITS(int)                -
+//      SYMCRYPT_SI_DSA_PQGVER          SYMCRYPT_SI_DSAPARAMS(int, int)         -
+//      SYMCRYPT_SI_DSA_SIGVER          SYMCRYPT_SI_DSAPARAMS(int, int)         -
+//      SYMCRYPT_SI_ECDSA_KEYGEN        SYMCRYPT_SI_ECURVE_XXX                  -
+//      SYMCRYPT_SI_ECDSA_KEYVER        SYMCRYPT_SI_ECURVE_XXX                  -
+//      SYMCRYPT_SI_ECDSA_SIGGEN        SYMCRYPT_SI_ECURVE_XXX                  Hash Alg Id
+//      SYMCRYPT_SI_ECDSA_SIGGEN_COMP   SYMCRYPT_SI_ECURVE_XXX                  Hash Alg Id
+//      SYMCRYPT_SI_ECDSA_SIGVER        SYMCRYPT_SI_ECURVE_XXX                  Hash Alg Id
+//      SYMCRYPT_SI_RSA_DEC_PRIM        SYMCRYPT_SI_MODULUS(int)                -
+//      SYMCRYPT_SI_RSA_KEYGEN          SYMCRYPT_SI_MODULUS(int)                -
+//      SYMCRYPT_SI_RSA_SIGGEN_PKCS15   SYMCRYPT_SI_MODULUS(int)                Hash Alg Id
+//      SYMCRYPT_SI_RSA_SIGVER_PKCS15   SYMCRYPT_SI_MODULUS(int)                Hash Alg Id
+//      SYMCRYPT_SI_RSA_SIGGEN_PKCSPSS  SYMCRYPT_SI_MODULUS(int)                Hash Alg Id
+//      SYMCRYPT_SI_RSA_SIGVER_PKCSPSS  SYMCRYPT_SI_MODULUS(int)                Hash Alg Id
+//      SYMCRYPT_SI_SAFE_PRIME_KEYGEN   SYMCRYPT_SI_SPG_XXX                     Hash Alg Id
+//      SYMCRYPT_SI_HMAC_XXX            SYMCRYPT_SI_KEYBITS(int)                -
+//      SYMCRYPT_SI_KDA_ONESTEP         Hash Alg Id or MAC alg Id               -
+//      SYMCRYPT_SI_PBKDF               MAC Alg Id                              -
+//      SYMCRYPT_SI_KDF_SP800_108_CTR   MAC Alg Id                              -
+//      SYMCRYPT_SI_KDF_SSH             Hash Alg Id                             -
+//      SYMCRYPT_SI_TLS_V12_KDF         Hash Alg Id                             -
+//      SYMCRYPT_SI_KAS_ECC             SYMCRYPT_SI_ECURVE_XXX                  Hash Alg Id
+//      SYMCRYPT_SI_KAS_ECC_SSC         SYMCRYPT_SI_ECURVE_XXX                  SYMCRYPT_SI_SCHEME_XXX
+//      SYMCRYPT_SI_KAS_FFC             SYMCRYPT_SI_SPG_XXX                     Hash Alg Id
+//      SYMCRYPT_SI_KAS_FFC_SSC         SYMCRYPT_SI_SPG_XXX                     SYMCRYPT_SI_SCHEME_XXX
+// 
+// 
+// Return value:
+//  For the specified service and algorithm (and parameters if any), the function
+//  returns 0 if SymCrypt implements the algorithm in an approved manner. A non-zero
+//  value indicates either the algorithm is non-approved or the parameters were invalid.
+//
+// Remarks:
+// - For parameters that contain integer values, the callers must ensure that the values
+// are within the acceptable limits by using the SYMCRYPT_SI_CHECK_INT(L) macro.

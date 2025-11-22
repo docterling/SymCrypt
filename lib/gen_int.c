@@ -7,7 +7,7 @@
 #include "precomp.h"
 
 
-UINT64 
+UINT64
 SYMCRYPT_CALL
 SymCryptUint64Gcd( UINT64 a, UINT64 b, UINT32 flags )
 {
@@ -19,7 +19,7 @@ SymCryptUint64Gcd( UINT64 a, UINT64 b, UINT32 flags )
 
 /*
     Algorithm outline:
-    
+
     if( b even )
         swap (a,b)
 
@@ -28,25 +28,26 @@ SymCryptUint64Gcd( UINT64 a, UINT64 b, UINT32 flags )
     if( a even )
         a = a/2
     else
-        if a < b 
+        if a < b
             swap (a,b)
         a = (a - b) / 2
 
     We ignore the data_public flag as we currently always use a side-channel safe implementation
 
-    to compute (a < b) on 64-bit values is hard if we want to avoid 
+    to compute (a < b) on 64-bit values is hard if we want to avoid
 */
-    SYMCRYPT_HARD_ASSERT( (flags & SYMCRYPT_FLAG_GCD_INPUTS_NOT_BOTH_EVEN) != 0 && ((a | b) & 1) != 0 );
+    SYMCRYPT_ASSERT( (flags & SYMCRYPT_FLAG_GCD_INPUTS_NOT_BOTH_EVEN) != 0 && ((a | b) & 1) != 0 );
+    UNREFERENCED_PARAMETER( flags );
 
     // First we make sure that b is odd
     // If b even: swap (a,b)
     swap = ~(0 - (b & 1));
     tmp = (a ^ b) & swap;
-    a ^= tmp; 
+    a ^= tmp;
     b ^= tmp;
 
     // Each loop iteration reduces len(a) + len(b) by at least 1, so looping 127 times is enough.
-    // For inputs (2^63, 2^63 + 1) we get 63 iterations to reduce a to 1, and then another 63 to get 
+    // For inputs (2^63, 2^63 + 1) we get 63 iterations to reduce a to 1, and then another 63 to get
     // the other value to 1, plus one more to make it 0.
     for( i=0; i < 127; i++ )
     {
@@ -62,19 +63,19 @@ SymCryptUint64Gcd( UINT64 a, UINT64 b, UINT32 flags )
         tmp = (a ^ b) & swap;
         a2 = a ^ tmp;
         b2 = b ^ tmp;
-        
-        // 
+
+        //
         a2 = (a2 - b2) / 2;
 
         // Compute the (a is odd) condition
-        tmp = 0 - (a & 1);       
+        tmp = 0 - (a & 1);
 
         // Assemble the final result
         a = (tmp & a2) | (~tmp & a/2);
         b = (tmp & b2) | (~tmp & b);
     }
 
-    SYMCRYPT_HARD_ASSERT( a == 0 );
+    SYMCRYPT_ASSERT( a == 0 );
     return b;
 }
 
@@ -85,7 +86,7 @@ Extended GCD notes.
 A side-channel safe implementation cannot effectively use Euclid's algorithm.
 The quotient is typically very small, but it can be very large. An SCS implementation
 would require the quotient to always be treated as a full-sized number, which would kill performance.
-Instead we use the binary algorihm which is easier to adapt to side-channel safety.
+Instead we use the binary algorithm which is easier to adapt to side-channel safety.
 
 Basic algorithm for inputs S1 and S2:
     Eliminate the joint factors of two. These are added later to the result
@@ -183,7 +184,7 @@ SymCryptIntExtendedGcd(
     _Out_writes_bytes_( cbScratch ) PBYTE           pbScratch,
                                     SIZE_T          cbScratch )
 {
-    UINT32 nDigits  = max( SymCryptIntDigitsizeOfObject( piSrc1 ), SymCryptIntDigitsizeOfObject( piSrc2 ));
+    UINT32 nDigits  = SYMCRYPT_MAX( SymCryptIntDigitsizeOfObject( piSrc1 ), SymCryptIntDigitsizeOfObject( piSrc2 ));
     PSYMCRYPT_INT       piA;        // size nDigits
     PSYMCRYPT_INT       piB;        // size nDigits, NOT ALLOCATED (part of the pdGcd divisor)
     PSYMCRYPT_INT       piTmp;      // size nDigits
@@ -192,7 +193,9 @@ SymCryptIntExtendedGcd(
     PSYMCRYPT_INT       piTmpDbl;   // size 2*nDigits
     PSYMCRYPT_DIVISOR   pdGcd;      // size nDigits
     PSYMCRYPT_DIVISOR   pdTmp;      // size nDigits
-    UINT32              cb;
+    UINT32              cbInt;
+    UINT32              cbWideInt;
+    UINT32              cbDivisor;
     SIZE_T              cbFnScratch;
     UINT32              t;
     UINT32              c;
@@ -202,36 +205,38 @@ SymCryptIntExtendedGcd(
 
     // Compute how much scratch space we need for the functions we call
     cbFnScratch = SYMCRYPT_SCRATCH_BYTES_FOR_INT_DIVMOD( 2 * nDigits, nDigits );
-    cbFnScratch = max( cbFnScratch, SYMCRYPT_SCRATCH_BYTES_FOR_INT_MUL( 2*nDigits ) );
-    cbFnScratch = max( cbFnScratch, SYMCRYPT_SCRATCH_BYTES_FOR_INT_TO_DIVISOR( nDigits ) );
+    cbFnScratch = SYMCRYPT_MAX( cbFnScratch, SYMCRYPT_SCRATCH_BYTES_FOR_INT_MUL( 2*nDigits ) );
+    cbFnScratch = SYMCRYPT_MAX( cbFnScratch, SYMCRYPT_SCRATCH_BYTES_FOR_INT_TO_DIVISOR( nDigits ) );
 
-    SYMCRYPT_ASSERT( cbScratch >=   4 * SymCryptSizeofIntFromDigits( nDigits ) +
-                                    1 * SymCryptSizeofIntFromDigits( 2*nDigits ) +
-                                    2 * SymCryptSizeofDivisorFromDigits( nDigits ) +
+    cbInt = SymCryptSizeofIntFromDigits( nDigits );
+    cbWideInt = SymCryptSizeofIntFromDigits( 2*nDigits );
+    cbDivisor = SymCryptSizeofDivisorFromDigits( nDigits );
+
+    SYMCRYPT_ASSERT( cbWideInt != 0 );
+    SYMCRYPT_ASSERT( cbScratch >=   4 * cbInt +
+                                    1 * cbWideInt +
+                                    2 * cbDivisor +
                                     cbFnScratch );
 
-    cb = SymCryptSizeofIntFromDigits( nDigits );
-    piA = SymCryptIntCreate( pbScratch, cb, nDigits );
-    pbScratch += cb; cbScratch -= cb;
+    piA = SymCryptIntCreate( pbScratch, cbInt, nDigits );
+    pbScratch += cbInt; cbScratch -= cbInt;
     // piB is stored inside the pdGcd object created later
-    piTmp = SymCryptIntCreate( pbScratch, cb, nDigits );
-    pbScratch += cb; cbScratch -= cb;
-    piA1 = SymCryptIntCreate( pbScratch, cb, nDigits );
-    pbScratch += cb; cbScratch -= cb;
-    piB1 = SymCryptIntCreate( pbScratch, cb, nDigits );
-    pbScratch += cb; cbScratch -= cb;
+    piTmp = SymCryptIntCreate( pbScratch, cbInt, nDigits );
+    pbScratch += cbInt; cbScratch -= cbInt;
+    piA1 = SymCryptIntCreate( pbScratch, cbInt, nDigits );
+    pbScratch += cbInt; cbScratch -= cbInt;
+    piB1 = SymCryptIntCreate( pbScratch, cbInt, nDigits );
+    pbScratch += cbInt; cbScratch -= cbInt;
 
-    cb = SymCryptSizeofIntFromDigits( 2 * nDigits );
-    piTmpDbl = SymCryptIntCreate( pbScratch, cb, 2 * nDigits );
-    pbScratch += cb; cbScratch -= cb;
+    piTmpDbl = SymCryptIntCreate( pbScratch, cbWideInt, 2 * nDigits );
+    pbScratch += cbWideInt; cbScratch -= cbWideInt;
 
-    cb = SymCryptSizeofDivisorFromDigits( nDigits );
-    pdGcd = SymCryptDivisorCreate( pbScratch, cb, nDigits );
-    pbScratch += cb; cbScratch -= cb;
+    pdGcd = SymCryptDivisorCreate( pbScratch, cbDivisor, nDigits );
+    pbScratch += cbDivisor; cbScratch -= cbDivisor;
     piB = SymCryptIntFromDivisor( pdGcd );
 
-    pdTmp = SymCryptDivisorCreate( pbScratch, cb, nDigits );
-    pbScratch += cb; cbScratch -= cb;
+    pdTmp = SymCryptDivisorCreate( pbScratch, cbDivisor, nDigits );
+    pbScratch += cbDivisor; cbScratch -= cbDivisor;
 
     SymCryptIntCopyMixedSize( piSrc1, piA );    // Ignore the error return value here as we know
     SymCryptIntCopyMixedSize( piSrc2, piB );    // that the destination integers are large enough.
@@ -240,10 +245,18 @@ SymCryptIntExtendedGcd(
     SymCryptIntSetValueUint32( 0, piB1 );
 
     // Currently not supported: Src1 to be 0 or Src2 to be even
+    SYMCRYPT_ASSERT( !SymCryptIntIsEqualUint32( piA, 0 ) );
+    SYMCRYPT_ASSERT( (SymCryptIntGetValueLsbits32( piB ) & 1) != 0 );
     if ( SymCryptIntIsEqualUint32( piA, 0 ) ||
         ((SymCryptIntGetValueLsbits32( piB ) & 1) == 0) )
     {
-        SymCryptFatal( 'xDCG' );
+        goto cleanup;
+    }
+
+    // Currently not supported: piInvSrc2ModSrc1 != NULL and max( Src1.nDigits, Src2.nDigits ) * 2 > SymCryptDigitsFromBits(SYMCRYPT_INT_MAX_BITS)
+    if( (piInvSrc2ModSrc1 != NULL) && (piTmpDbl == NULL) )
+    {
+        goto cleanup;
     }
 
     t = SymCryptIntBitsizeOfObject( piSrc1 ) + SymCryptIntBitsizeOfObject( piSrc2 ) - 1;
@@ -314,7 +327,7 @@ SymCryptIntExtendedGcd(
 
     if( piInvSrc1ModSrc2 != NULL )
     {
-        // Future optimization: if GCD == 1 then we can just copy B1. 
+        // Future optimization: if GCD == 1 then we can just copy B1.
         SymCryptIntDivMod( piSrc2, pdGcd, SymCryptIntFromDivisor( pdTmp ), NULL, pbScratch, cbScratch );
 
         // IntToDivisor requirement:

@@ -1,11 +1,10 @@
 //
-// Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
+// Copyright (c) Microsoft Corporation. Licensed under the MIT license.
 //
 // callback.cpp: Callback functions for SymCrypt and MsBignum
 //
 
 #include "precomp.h"
-#include "msbignum_implementations.h"
 
 //
 // Format of checked allocation:
@@ -31,7 +30,7 @@ AllocWithChecksInit()
 {
     while( (g_bAllocFill = g_rng.byte()) == 0 );
 
-    BCryptGenRandom( NULL, (PBYTE) &g_magic, sizeof( g_magic ), BCRYPT_USE_SYSTEM_PREFERRED_RNG );
+    GENRANDOM( (PBYTE) &g_magic, sizeof( g_magic ) );
 }
 
 PVOID
@@ -60,10 +59,10 @@ AllocWithChecks( SIZE_T nBytes, volatile INT64 * pOutstandingAllocs, volatile IN
     offset = (ULONG)(res - p);
     CHECK( offset >= 16 && offset < 256, "?" );
 
-    *(ULONGLONG *) &res[-8] = g_magic ^ (SIZE_T) res ^ 'strt';
-    *(ULONGLONG *) &res[nBytes ] = g_magic ^ (SIZE_T) res ^ 'end.'; 
-    *(ULONG *) &res[-12] = (UINT32) nBytes;
-    *(ULONG *) &res[-16] = offset;
+    *(UINT64 *) &res[-8] = g_magic ^ (SIZE_T) res ^ 'strt';
+    SYMCRYPT_STORE_LSBFIRST64(&res[nBytes], g_magic ^ (SIZE_T) res ^ 'end.');
+    *(UINT32 *) &res[-12] = (UINT32) nBytes;
+    *(UINT32 *) &res[-16] = offset;
 
     InterlockedIncrement64( pOutstandingAllocs );
     InterlockedIncrement64( pAllocs );
@@ -91,7 +90,7 @@ FreeWithChecks( PVOID ptr, volatile INT64 * pOutstandingAllocs )
     SIZE_T nBytes;
 
     p = (PBYTE) ptr;
-    nBytes = *(ULONG *) &p[-12];
+    nBytes = *(UINT32 *) &p[-12];
 
     if (!g_perfTestsRunning)
     {
@@ -102,9 +101,9 @@ FreeWithChecks( PVOID ptr, volatile INT64 * pOutstandingAllocs )
     }
 
     CHECK( *(ULONGLONG *)&p[-8] == (g_magic ^ (SIZE_T) p ^ 'strt'), "Left magic corrupted" );
-    CHECK( *(ULONGLONG *)&p[nBytes] == (g_magic ^ (SIZE_T) p ^ 'end.'), "Right magic corrupted" );
+    CHECK( SYMCRYPT_LOAD_LSBFIRST64(&p[nBytes]) == (g_magic ^ (SIZE_T) p ^ 'end.'), "Right magic corrupted" );
     CHECK( InterlockedDecrement64( pOutstandingAllocs ) != -1, "?" );
-    delete[] ( p - *(ULONG *)&p[-16] );
+    delete[] ( p - *(UINT32 *)&p[-16] );
 }
 
 VOID
@@ -143,10 +142,41 @@ SymCryptCallbackRandom(
 
     CHECK( cbBuffer < 0xffffffff, "Random buffer too large" );
 
-    status = BCryptGenRandom( BCRYPT_RNG_ALG_HANDLE, pbBuffer, (UINT32) cbBuffer, 0 );
+    status = GENRANDOM( pbBuffer, (UINT32) cbBuffer );
 
     return NT_SUCCESS( status ) ? SYMCRYPT_NO_ERROR : SYMCRYPT_EXTERNAL_FAILURE;
 }
+
+PVOID
+SYMCRYPT_CALL
+SymCryptCallbackAllocateMutexFastInproc()
+{
+    return ALLOCATE_FAST_INPROC_MUTEX();
+}
+
+VOID
+SYMCRYPT_CALL
+SymCryptCallbackFreeMutexFastInproc( PVOID pMutex )
+{
+    FREE_FAST_INPROC_MUTEX(pMutex);
+}
+
+VOID
+SYMCRYPT_CALL
+SymCryptCallbackAcquireMutexFastInproc( PVOID pMutex )
+{
+    ACQUIRE_FAST_INPROC_MUTEX(pMutex);
+}
+
+VOID
+SYMCRYPT_CALL
+SymCryptCallbackReleaseMutexFastInproc( PVOID pMutex )
+{
+    RELEASE_FAST_INPROC_MUTEX(pMutex);
+}
+
+#if INCLUDE_IMPL_MSBIGNUM
+
 
 //
 // Callback functions for MsBignum
@@ -194,7 +224,7 @@ void WINAPI mp_free_temp(
     FreeWithChecksMsBignum(p);
 }
 
-void SetMpErrno(__in mp_errno_tc code, PBIGCTX_ARG)
+void WINAPI SetMpErrno(__in mp_errno_tc code, PBIGCTX_ARG)
 {
     if (NULL != pbigctx)
     {
@@ -202,7 +232,7 @@ void SetMpErrno(__in mp_errno_tc code, PBIGCTX_ARG)
     }
 }
 
-void SetMpErrno_clue1(__in mp_errno_tc code, __in_opt const char *hint, PBIGCTX_ARG)
+void WINAPI SetMpErrno_clue1(__in mp_errno_tc code, __in_opt const char *hint, PBIGCTX_ARG)
 {
     UNREFERENCED_PARAMETER(hint);
 
@@ -212,7 +242,6 @@ void SetMpErrno_clue1(__in mp_errno_tc code, __in_opt const char *hint, PBIGCTX_
 #if defined(__cplusplus)
 extern "C" {
 #endif
-
 
 BOOL_SUCCESS WINAPI random_bytes(
   __out_ecount(nbyte)  BYTE   *barray,
@@ -224,7 +253,7 @@ BOOL_SUCCESS WINAPI random_bytes(
 
     CHECK( nbyte < 0xffffffff, "Random buffer too large" );
 
-    status = BCryptGenRandom( BCRYPT_RNG_ALG_HANDLE, barray, (UINT32) nbyte, 0 );
+    status = GENRANDOM( barray, (UINT32) nbyte );
 
     if( pbigctx == NULL )
     {
@@ -254,3 +283,5 @@ cleanup:
 #if defined(__cplusplus)
 }
 #endif
+
+#endif // INCLUDE_IMPL_MSBIGNUM

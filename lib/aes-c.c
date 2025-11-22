@@ -13,12 +13,12 @@
 
 //
 // Static vs. dynamically generated tables.
-// 
+//
 // AES uses about 13 kB of tables; it turns out that most of these tables can be generated
-// algorithmically much faster than they can be read off the disk. 
+// algorithmically much faster than they can be read off the disk.
 // This implementation does not do so.
 // The reason is that generated tables live in the modifyable data segment, which means
-// that they are not shared between different instances of a DLL. 
+// that they are not shared between different instances of a DLL.
 // Static tables are shared. Especially for applications that have a very large number
 // of processes (e.g. Terminal Servers) the extra cost of generating and storing a
 // per-process copy of these tables is higher then the cost of loading it a few times
@@ -33,10 +33,10 @@
 //
 
 //extern BYTE SymCryptAesSbox[256];                   // Basic S-box, not used
-extern __declspec(align( 256)) BYTE SymCryptAesInvSbox[256];                // For final round in decryption
-extern __declspec(align(1024)) BYTE SymCryptAesSboxMatrixMult[4][256][4];   // Main encryption tables
-extern __declspec(align(1024)) BYTE SymCryptAesInvSboxMatrixMult[4][256][4];// Main decryption tables
-extern __declspec(align(1024)) BYTE SymCryptAesInvMatrixMult[4][256][4];    // For computing decryption round keys
+extern SYMCRYPT_ALIGN_AT( 256) BYTE SymCryptAesInvSbox[256];                // For final round in decryption
+extern SYMCRYPT_ALIGN_AT(1024) BYTE SymCryptAesSboxMatrixMult[4][256][4];   // Main encryption tables
+extern SYMCRYPT_ALIGN_AT(1024) BYTE SymCryptAesInvSboxMatrixMult[4][256][4];// Main decryption tables
+extern SYMCRYPT_ALIGN_AT(1024) BYTE SymCryptAesInvMatrixMult[4][256][4];    // For computing decryption round keys
 
 //
 // Throughout this implementation we use UINT32s to access byte arrays. The AES
@@ -51,7 +51,7 @@ extern __declspec(align(1024)) BYTE SymCryptAesInvMatrixMult[4][256][4];    // F
 
 //
 // Only need to enforce alignment on platforms that are not x86 or x64
-// Future improvement: should switch to using UNALIGNED pointer accesses
+// Future improvement: should switch to using unaligned pointer accesses
 // on some platforms.
 //
 #define NEED_ALIGN (!(SYMCRYPT_CPU_X86 | SYMCRYPT_CPU_AMD64 | SYMCRYPT_CPU_ARM | SYMCRYPT_CPU_ARM64))
@@ -60,7 +60,7 @@ extern __declspec(align(1024)) BYTE SymCryptAesInvMatrixMult[4][256][4];    // F
 VOID
 SYMCRYPT_CALL
 SymCryptAes4SboxC(
-    _In_reads_(4)   PCBYTE  pIn, 
+    _In_reads_(4)   PCBYTE  pIn,
     _Out_writes_(4) PBYTE   pOut )
 //
 // Perform 4 S-box lookups.
@@ -78,8 +78,8 @@ SymCryptAes4SboxC(
 
 VOID
 SYMCRYPT_CALL
-SymCryptAesCreateDecryptionRoundKeyC( 
-    _In_reads_(16)     PCBYTE  pEncryptionRoundKey, 
+SymCryptAesCreateDecryptionRoundKeyC(
+    _In_reads_(16)     PCBYTE  pEncryptionRoundKey,
     _Out_writes_(16)    PBYTE   pDecryptionRoundKey )
 //
 // Convert an encryption round key to a decryption round key by applying the inverse
@@ -93,7 +93,7 @@ SymCryptAesCreateDecryptionRoundKeyC(
     PCBYTE q = pEncryptionRoundKey;
 
     for( i=0; i<4; i++ ) {
-        *(UINT32 *)p = 
+        *(UINT32 *)p =
             *(UINT32 *)SymCryptAesInvMatrixMult[0][q[0]] ^
             *(UINT32 *)SymCryptAesInvMatrixMult[1][q[1]] ^
             *(UINT32 *)SymCryptAesInvMatrixMult[2][q[2]] ^
@@ -146,7 +146,7 @@ SymCryptAesEncryptC(
 
     //
     // From this point on all our data is UINT32 aligned or better on those
-    // platforms that have alignement restrictions.
+    // platforms that have alignment restrictions.
     //
 
     keyPtr = &pExpandedKey->RoundKey[0];            // First round key
@@ -200,28 +200,28 @@ SymCryptAesEncryptC(
     // Final round
 
     // SubBytes/ShiftRows for col. 0
-    state2[0] = SymCryptAesSboxMatrixMult[0][ state[0][0] ][1];
-    state2[3] = SymCryptAesSboxMatrixMult[0][ state[0][1] ][1] << 8;
-    state2[2] = SymCryptAesSboxMatrixMult[0][ state[0][2] ][1] << 16;
-    state2[1] = SymCryptAesSboxMatrixMult[0][ state[0][3] ][1] << 24;
+    state2[0] = (UINT32) SymCryptAesSboxMatrixMult[0][ state[0][0] ][1];
+    state2[3] = (UINT32) SymCryptAesSboxMatrixMult[0][ state[0][1] ][1] << 8;
+    state2[2] = (UINT32) SymCryptAesSboxMatrixMult[0][ state[0][2] ][1] << 16;
+    state2[1] = (UINT32) SymCryptAesSboxMatrixMult[0][ state[0][3] ][1] << 24;
 
     // SubBytes/ShiftRows for col. 1
-    state2[1] |= SymCryptAesSboxMatrixMult[0][ state[1][0] ][1];
-    state2[0] |= SymCryptAesSboxMatrixMult[0][ state[1][1] ][1] << 8;
-    state2[3] |= SymCryptAesSboxMatrixMult[0][ state[1][2] ][1] << 16;
-    state2[2] |= SymCryptAesSboxMatrixMult[0][ state[1][3] ][1] << 24;
+    state2[1] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[1][0] ][1];
+    state2[0] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[1][1] ][1] << 8;
+    state2[3] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[1][2] ][1] << 16;
+    state2[2] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[1][3] ][1] << 24;
 
     // SubBytes/ShiftRows for col. 2
-    state2[2] |= SymCryptAesSboxMatrixMult[0][ state[2][0] ][1];
-    state2[1] |= SymCryptAesSboxMatrixMult[0][ state[2][1] ][1] << 8;
-    state2[0] |= SymCryptAesSboxMatrixMult[0][ state[2][2] ][1] << 16;
-    state2[3] |= SymCryptAesSboxMatrixMult[0][ state[2][3] ][1] << 24;
+    state2[2] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[2][0] ][1];
+    state2[1] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[2][1] ][1] << 8;
+    state2[0] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[2][2] ][1] << 16;
+    state2[3] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[2][3] ][1] << 24;
 
     // SubBytes/ShiftRows for col. 3
-    state2[3] |= SymCryptAesSboxMatrixMult[0][ state[3][0] ][1];
-    state2[2] |= SymCryptAesSboxMatrixMult[0][ state[3][1] ][1] << 8;
-    state2[1] |= SymCryptAesSboxMatrixMult[0][ state[3][2] ][1] << 16;
-    state2[0] |= SymCryptAesSboxMatrixMult[0][ state[3][3] ][1] << 24;
+    state2[3] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[3][0] ][1];
+    state2[2] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[3][1] ][1] << 8;
+    state2[1] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[3][2] ][1] << 16;
+    state2[0] |= (UINT32) SymCryptAesSboxMatrixMult[0][ state[3][3] ][1] << 24;
 
     // AddRoundKey
     *((UINT32 *) &pbCiphertext[0 ]) = *(UINT32 *) (*keyPtr)[0] ^ state2[0];
@@ -249,7 +249,7 @@ SymCryptAesDecryptC(
 
     const BYTE (*keyPtr)[4][4];
     const BYTE (*keyLimit)[4][4];
-    
+
 #if NEED_ALIGN
     SYMCRYPT_ALIGN BYTE   alignBuffer[SYMCRYPT_AES_BLOCK_SIZE];
 #endif
@@ -321,28 +321,28 @@ SymCryptAesDecryptC(
     // Final round
 
     // SubBytes/ShiftRows for col. 0
-    state2[0] = SymCryptAesInvSbox[ state[0][0] ];
-    state2[1] = SymCryptAesInvSbox[ state[0][1] ] << 8;
-    state2[2] = SymCryptAesInvSbox[ state[0][2] ] << 16;
-    state2[3] = SymCryptAesInvSbox[ state[0][3] ] << 24;
+    state2[0] = (UINT32) SymCryptAesInvSbox[ state[0][0] ];
+    state2[1] = (UINT32) SymCryptAesInvSbox[ state[0][1] ] << 8;
+    state2[2] = (UINT32) SymCryptAesInvSbox[ state[0][2] ] << 16;
+    state2[3] = (UINT32) SymCryptAesInvSbox[ state[0][3] ] << 24;
 
     // SubBytes/ShiftRows for col. 1
-    state2[1] |= SymCryptAesInvSbox[ state[1][0] ];
-    state2[2] |= SymCryptAesInvSbox[ state[1][1] ] << 8;
-    state2[3] |= SymCryptAesInvSbox[ state[1][2] ] << 16;
-    state2[0] |= SymCryptAesInvSbox[ state[1][3] ] << 24;
+    state2[1] |= (UINT32) SymCryptAesInvSbox[ state[1][0] ];
+    state2[2] |= (UINT32) SymCryptAesInvSbox[ state[1][1] ] << 8;
+    state2[3] |= (UINT32) SymCryptAesInvSbox[ state[1][2] ] << 16;
+    state2[0] |= (UINT32) SymCryptAesInvSbox[ state[1][3] ] << 24;
 
     // SubBytes/ShiftRows for col. 2
-    state2[2] |= SymCryptAesInvSbox[ state[2][0] ];
-    state2[3] |= SymCryptAesInvSbox[ state[2][1] ] << 8;
-    state2[0] |= SymCryptAesInvSbox[ state[2][2] ] << 16;
-    state2[1] |= SymCryptAesInvSbox[ state[2][3] ] << 24;
+    state2[2] |= (UINT32) SymCryptAesInvSbox[ state[2][0] ];
+    state2[3] |= (UINT32) SymCryptAesInvSbox[ state[2][1] ] << 8;
+    state2[0] |= (UINT32) SymCryptAesInvSbox[ state[2][2] ] << 16;
+    state2[1] |= (UINT32) SymCryptAesInvSbox[ state[2][3] ] << 24;
 
     // SubBytes/ShiftRows for col. 3
-    state2[3] |= SymCryptAesInvSbox[ state[3][0] ];
-    state2[0] |= SymCryptAesInvSbox[ state[3][1] ] << 8;
-    state2[1] |= SymCryptAesInvSbox[ state[3][2] ] << 16;
-    state2[2] |= SymCryptAesInvSbox[ state[3][3] ] << 24;
+    state2[3] |= (UINT32) SymCryptAesInvSbox[ state[3][0] ];
+    state2[0] |= (UINT32) SymCryptAesInvSbox[ state[3][1] ] << 8;
+    state2[1] |= (UINT32) SymCryptAesInvSbox[ state[3][2] ] << 16;
+    state2[2] |= (UINT32) SymCryptAesInvSbox[ state[3][3] ] << 24;
 
     // AddRoundKey
     *((UINT32 *) &pbPlaintext[0 ]) = *(UINT32 *) (*keyPtr)[0] ^ state2[0];
@@ -358,49 +358,35 @@ SymCryptAesDecryptC(
 
 VOID
 SYMCRYPT_CALL
-SymCryptAesEcbEncryptC( 
+SymCryptAesEcbEncryptC(
     _In_                                        PCSYMCRYPT_AES_EXPANDED_KEY pExpandedKey,
     _In_reads_( cbData )                        PCBYTE                      pbSrc,
     _Out_writes_( cbData )                      PBYTE                       pbDst,
                                                 SIZE_T                      cbData )
 {
-    SIZE_T cbToDo = cbData & ~(SYMCRYPT_AES_BLOCK_SIZE - 1);
-    SIZE_T i;
-
-    //
-    // This loop condition is slightly strange.
-    // If I use i < cbToDo (which is correct) then Prefast complains about buffer overflows.
-    // Even using SYMCRYPT_ASSERT which does an _Analysis_assume_ I can't fix the Prefast issue.
-    // The +15 in the code is slightly slower but it solves the Prefast issue.
-    //
-
-    for( i=0; (i+SYMCRYPT_AES_BLOCK_SIZE-1) < cbToDo; i+= SYMCRYPT_AES_BLOCK_SIZE )
+    while( cbData >= SYMCRYPT_AES_BLOCK_SIZE )
     {
-        SymCryptAesEncryptC( pExpandedKey, pbSrc + i, pbDst + i );
+        SymCryptAesEncryptC( pExpandedKey, pbSrc, pbDst );
+        pbSrc += SYMCRYPT_AES_BLOCK_SIZE;
+        pbDst += SYMCRYPT_AES_BLOCK_SIZE;
+        cbData -= SYMCRYPT_AES_BLOCK_SIZE;
     }
 }
 
 VOID
 SYMCRYPT_CALL
-SymCryptAesEcbDecryptC( 
+SymCryptAesEcbDecryptC(
     _In_                                        PCSYMCRYPT_AES_EXPANDED_KEY pExpandedKey,
     _In_reads_( cbData )                        PCBYTE                      pbSrc,
     _Out_writes_( cbData )                      PBYTE                       pbDst,
                                                 SIZE_T                      cbData )
 {
-    SIZE_T cbToDo = cbData & ~(SYMCRYPT_AES_BLOCK_SIZE - 1);
-    SIZE_T i;
-
-    //
-    // This loop condition is slightly strange.
-    // If I use i < cbToDo (which is correct) then Prefast complains about buffer overflows.
-    // Even using SYMCRYPT_ASSERT which does an _Analysis_assume_ I can't fix the Prefast issue.
-    // The +15 in the code is slightly slower but it solves the Prefast issue.
-    //
-
-    for( i=0; (i+SYMCRYPT_AES_BLOCK_SIZE-1) < cbToDo; i+= SYMCRYPT_AES_BLOCK_SIZE )
+    while( cbData >= SYMCRYPT_AES_BLOCK_SIZE )
     {
-        SymCryptAesDecryptC( pExpandedKey, pbSrc + i, pbDst + i );
+        SymCryptAesDecryptC( pExpandedKey, pbSrc, pbDst );
+        pbSrc += SYMCRYPT_AES_BLOCK_SIZE;
+        pbDst += SYMCRYPT_AES_BLOCK_SIZE;
+        cbData -= SYMCRYPT_AES_BLOCK_SIZE;
     }
 }
 

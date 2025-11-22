@@ -4,16 +4,11 @@
 // Copyright (c) Microsoft Corporation. Licensed under the MIT license. 
 //
 
-#include "sc_implementations.h"
-
-#include "msbignum_implementations.h"
 #include "bigpriv.h"
 #include "ms_rsa.h"
 
 #include "cryptdsa.h"
 #include "cryptdh.h"
-
-#include "cng_implementations.h"
 
 #define IMPSC_INDEX             (0)
 #define IMPMSBIGNUM_INDEX       (1)
@@ -41,7 +36,7 @@ extern HASHALG_DATA g_HashAlgs[TEST_INTEROP_NUMOF_HASHALGS];
 // Helper functions
 UINT32 testInteropImplToInd( AlgorithmImplementation * pImpl );
 
-VOID testInteropScToHashContext( PCSYMCRYPT_HASH pHashAlgorithm, PBYTE rgbDigest, hash_function_context* pHashFunCxt);
+VOID testInteropScToHashContext( PCSYMCRYPT_HASH pHashAlgorithm, PBYTE rgbDigest, hash_function_context* pHashFunCtx);
 
 LPCWSTR testInteropScToCngHash( PSYMCRYPT_HASH pHashAlgorithm );
 
